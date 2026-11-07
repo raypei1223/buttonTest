@@ -14,20 +14,6 @@
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
 }
-@media (prefers-color-scheme:dark){
-  :root:not([data-theme="light"]){
-    --bg:#15181c; --plate:#22262b; --plate-edge:#30353b; --well:#0c0e10;
-    --cap-hi:#c9453b; --cap:#9c2a22; --cap-lo:#6b1a15; --side:#3d0d0a;
-    --shadow:rgba(0,0,0,.6);
-    --led-off:#1a281e; --led-ring:#2b3138; --bz-hi:#5a616b; --bz-lo:#1a1e22; --lens-off-a:#20402a; --lens-off-b:#0e2014; --sq-well:#07090a; --sq-hi:#1c2127; --sq-lo:#161a1f; --sq-edge:rgba(255,255,255,.08); --sq-groove:rgba(0,0,0,.65); --led-hi:#d4ffdc; --led-on:#35e873; --led-lo:#119444; --led-glow:rgba(53,232,115,.8); --led-glow-soft:rgba(53,232,115,.35);
-  }
-}
-:root[data-theme="dark"]{
-  --bg:#15181c; --plate:#22262b; --plate-edge:#30353b; --well:#0c0e10;
-  --cap-hi:#c9453b; --cap:#9c2a22; --cap-lo:#6b1a15; --side:#3d0d0a;
-  --shadow:rgba(0,0,0,.6);
-    --led-off:#1a281e; --led-ring:#2b3138; --bz-hi:#5a616b; --bz-lo:#1a1e22; --lens-off-a:#20402a; --lens-off-b:#0e2014; --sq-well:#07090a; --sq-hi:#1c2127; --sq-lo:#161a1f; --sq-edge:rgba(255,255,255,.08); --sq-groove:rgba(0,0,0,.65); --led-hi:#d4ffdc; --led-on:#35e873; --led-lo:#119444; --led-glow:rgba(53,232,115,.8); --led-glow-soft:rgba(53,232,115,.35);
-}
 *,*::before,*::after{box-sizing:inherit}
 html,body{height:100%;margin:0}
 body{
@@ -128,10 +114,6 @@ body{
   box-shadow:inset 0 0 calc(var(--s)*.022) rgba(0,0,0,.7),inset 0 calc(var(--s)*.014) calc(var(--s)*.016) rgba(0,0,0,.45),inset 0 0 0 1px var(--sq-groove);
 }
 .sq:focus-visible{outline:3px solid var(--cap-hi);outline-offset:6px}
-@media (prefers-color-scheme:dark){
-  :root:not([data-theme="light"]) .sq{--lens-a:#d9d6ca; --lens-b:#a5a192; --lens-edge:rgba(255,255,255,.6)}
-}
-:root[data-theme="dark"] .sq{--lens-a:#d9d6ca; --lens-b:#a5a192; --lens-edge:rgba(255,255,255,.6)}
 .plate{
   width:var(--s);height:var(--s);border-radius:50%;
   background:radial-gradient(circle at 35% 28%,var(--plate-edge),var(--plate) 55%);
@@ -194,10 +176,6 @@ body{
 .rb.down::before{transform:translateY(calc(var(--s)*.008));box-shadow:0 1px 2px rgba(0,0,0,.4)}
 .rb.down .rbcap{transform:translateY(calc(var(--s)*.022));transition-duration:.04s}
 .rb:focus-visible{outline:3px solid var(--cap-hi);outline-offset:6px}
-@media (prefers-color-scheme:dark){
-  :root:not([data-theme="light"]) .rb{--rb-top-a:#8d8878; --rb-top-b:#757061; --rb-side:#54503f; --rb-edge:rgba(255,255,255,.22); --rb-wear:rgba(255,255,255,.1)}
-}
-:root[data-theme="dark"] .rb{--rb-top-a:#8d8878; --rb-top-b:#757061; --rb-side:#54503f; --rb-edge:rgba(255,255,255,.22); --rb-wear:rgba(255,255,255,.1)}
 /* 小さな黒いゴムのボタン：丸く盛り上がったドームを押すと、ふにゃっと潰れる */
 .gm{
   --gm-hi:#4b4c51; --gm-mid:#26272b; --gm-lo:#0a0a0c;
@@ -249,10 +227,6 @@ body{
 .gm.down .gmfold{opacity:.5;transition-duration:.08s}
 .gm.down .gmdome::after{opacity:.15}
 .gm:focus-visible{outline:3px solid var(--cap-hi);outline-offset:4px}
-@media (prefers-color-scheme:dark){
-  :root:not([data-theme="light"]) .gm{--gm-hi:#5b5c62; --gm-mid:#2d2e33}
-}
-:root[data-theme="dark"] .gm{--gm-hi:#5b5c62; --gm-mid:#2d2e33}
 @media (prefers-reduced-motion:reduce){.btn::before,.cap,.lit,.glow,.rb::before,.rbcap,.gmdome,.gmdome::after,.gmdent,.gmfold,.sq,.sq::before,.sq::after,.sqface,.sqface::before,.sqface::after{transition:none}}
 </style>
 </head>
@@ -287,6 +261,8 @@ body{
       var AC=window.AudioContext||window.webkitAudioContext;
       if(!AC)return null;
       ctx=new AC();
+      // iPhoneの消音モード(サイドスイッチ)でもスピーカーから鳴らす（iOS 17以降。非対応の端末では何も起きない）
+      try{if("audioSession" in navigator)navigator.audioSession.type="playback"}catch(e){}
       var len=Math.floor(ctx.sampleRate*0.2);
       noise=ctx.createBuffer(1,len,ctx.sampleRate);
       var d=noise.getChannelData(0);
@@ -327,15 +303,36 @@ body{
     g.gain.exponentialRampToValueAtTime(.001,t+dur);
     o.connect(g);g.connect(dest);o.start(t);o.stop(t+dur+.02);
   }
+  // 録音した音の再生（ボタンごとに group を分ける）。
+  // ・押し直したら、前の音を一瞬で消して重ならないようにする
+  // ・離した音は、直前の「押した音」の山が終わるまで少し待ってから鳴らす（短い押しでも2つが団子にならない）
+  var voices={},downAt={},GAP=.08;
+  function playSmp(grp,smp,down,spread){
+    var c=ctx,now=c.currentTime,v=voices[grp]||(voices[grp]=[]);
+    if(down){
+      v.forEach(function(o){
+        try{
+          o.g.gain.cancelScheduledValues(now);
+          o.g.gain.setValueAtTime(o.g.gain.value,now);
+          o.g.gain.linearRampToValueAtTime(0,now+.02);
+          o.s.stop(now+.03);
+        }catch(e){}
+      });
+      v.length=0;downAt[grp]=now;
+    }
+    var when=down?now:Math.max(now,(downAt[grp]||0)+GAP);
+    var sn=c.createBufferSource(),g=c.createGain();
+    sn.buffer=smp;
+    sn.playbackRate.value=1+(Math.random()-.5)*spread;
+    sn.connect(g);g.connect(c.destination);
+    var o={s:sn,g:g};v.push(o);
+    sn.onended=function(){var i=v.indexOf(o);if(i>=0)v.splice(i,1)};
+    sn.start(when);
+  }
   function click(down){
     var c=audio();if(!c)return;
     var smp=samples[down?"down":"up"];
-    if(smp){
-      var sn=c.createBufferSource();sn.buffer=smp;
-      sn.playbackRate.value=1+(Math.random()-.5)*.06;
-      sn.connect(c.destination);sn.start();
-      return;
-    }
+    if(smp){playSmp("big",smp,down,.06);return}
     var t=c.currentTime+.005,v=1+(Math.random()-.5)*.08;
     var master=c.createGain();master.gain.value=.9;
     var comp=c.createDynamicsCompressor();
@@ -358,9 +355,7 @@ body{
     var c=audio();if(!c)return;
     var smp=samples[down?"sqdown":"squp"];
     if(!smp){click(down);return}
-    var sn=c.createBufferSource();sn.buffer=smp;
-    sn.playbackRate.value=1+(Math.random()-.5)*.05;
-    sn.connect(c.destination);sn.start();
+    playSmp("sq",smp,down,.05);
   }
 
   // 古びた四角いボタン（録音した「カチッ」を押す／離すで鳴らす。読み込めていなければ丸ボタンの音で代用）
@@ -368,29 +363,31 @@ body{
     var c=audio();if(!c)return;
     var smp=samples[down?"rbdown":"rbup"];
     if(!smp){click(down);return}
-    var sn=c.createBufferSource();sn.buffer=smp;
-    sn.playbackRate.value=1+(Math.random()-.5)*.04;
-    sn.connect(c.destination);sn.start();
+    playSmp("rb",smp,down,.05);
   }
   // 黒いゴムのボタン（録音した「カチッ」を押す／離すで鳴らす。読み込めていなければ丸ボタンの音で代用）
   function clickGm(down){
     var c=audio();if(!c)return;
     var smp=samples[down?"gmdown":"gmup"];
     if(!smp){click(down);return}
-    var sn=c.createBufferSource();sn.buffer=smp;
-    sn.playbackRate.value=1+(Math.random()-.5)*.04;
-    sn.connect(c.destination);sn.start();
+    playSmp("gm",smp,down,.05);
   }
   // 押している間だけ鳴る「ブーーン…」：点灯ボタンの電源トランス／リレーの唸り。
   // 電源周波数(50Hz)と、その2倍(100Hz)が主役で、倍音と、わずかなうねり・揺らぎが混ざる。
-  var hum=null;
+  var hum=null,humTimer=0,HUM_HOLD=350,HUM_PEAK=.045,HUM_RISE=1.3;
+  // 押してから350ms経って初めて鳴らす。連打（短い押し）では鳴らない。
   function humStart(){
-    var c=audio();if(!c)return;
-    humStop(true);
-    var t=c.currentTime+.05;
+    humCancel();
+    humTimer=setTimeout(function(){humTimer=0;humBegin()},HUM_HOLD);
+  }
+  function humCancel(){if(humTimer){clearTimeout(humTimer);humTimer=0}}
+  function humBegin(){
+    var c=audio();if(!c||hum)return;
+    var t=c.currentTime;
     var out=c.createGain();
-    out.gain.setValueAtTime(.0001,t);
-    out.gain.linearRampToValueAtTime(.045,t+1.3); // ゆっくり立ち上がる「ブーーーン」
+    out.gain.value=0; // 既定値は1なので、必ず0から始める（これを忘れると大音量になる）
+    out.gain.setValueAtTime(0,t);
+    out.gain.linearRampToValueAtTime(HUM_PEAK,t+HUM_RISE); // ゆっくり立ち上がる「ブーーーン」
     var lp=c.createBiquadFilter();lp.type="lowpass";lp.frequency.value=380;lp.Q.value=.7;
     lp.connect(out);out.connect(c.destination);
     var oscs=[];
@@ -402,18 +399,23 @@ body{
       o.connect(g);g.connect(lp);o.start(t);oscs.push(o);
     });
     var lfo=c.createOscillator();lfo.frequency.value=.35;
-    var lg=c.createGain();lg.gain.value=.008; // ごくわずかな音量の揺らぎ
+    var lg=c.createGain();lg.gain.value=.004; // ごくわずかな音量の揺らぎ
     lfo.connect(lg);lg.connect(out.gain);lfo.start(t);
-    hum={out:out,nodes:oscs.concat([lfo])};
+    hum={out:out,nodes:oscs.concat([lfo]),t0:t};
   }
   function humStop(fast){
+    humCancel();
     if(!hum||!ctx)return;
-    var t=ctx.currentTime,h=hum,rel=fast?.03:.4;hum=null; // 離すと「…」と余韻を残して消える
-    h.out.gain.cancelScheduledValues(t);
-    h.out.gain.setValueAtTime(Math.max(h.out.gain.value,.0001),t);
+    var h=hum;hum=null;
+    var t=ctx.currentTime,rel=fast?.03:.4; // 離すと「…」と余韻を残して消える
+    // 立ち上がり途中で離したときは、その時点の音量から下げる（急に大きくならない）
+    var cur=Math.min(1,Math.max(0,(t-h.t0)/HUM_RISE))*HUM_PEAK;
+    h.out.gain.cancelScheduledValues(0);
+    h.out.gain.setValueAtTime(cur,t);
     h.out.gain.linearRampToValueAtTime(.0001,t+rel);
     h.nodes.forEach(function(o){try{o.stop(t+rel+.05)}catch(e){}});
   }
+  document.addEventListener("visibilitychange",function(){if(document.hidden)humStop(true)});
   function buzz(ms){try{if(navigator.vibrate)navigator.vibrate(ms)}catch(e){}}
 
   // 緑のLED：押すたびに右から1個ずつ消える
