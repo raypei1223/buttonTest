@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>ボタン</title>
 <style>
 :root{
@@ -16,6 +16,8 @@
 }
 *,*::before,*::after{box-sizing:inherit}
 html,body{height:100%;margin:0}
+*{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+html,body{touch-action:none;overscroll-behavior:none}
 body{
   background:var(--bg);
   display:grid;place-items:center;
@@ -447,8 +449,10 @@ body{
   showLeds();
 
   var btn=document.getElementById("btn"),pressed=false;
-  function press(){if(pressed)return;pressed=true;btn.classList.add("down");dropLed();click(true);buzz(14)}
-  function release(){if(!pressed)return;pressed=false;btn.classList.remove("down");click(false);buzz(6)}
+  function holdDown(el){el._t0=performance.now();clearTimeout(el._ut);el.classList.add("down")}
+  function holdUp(el){var w=90-(performance.now()-el._t0);if(w>0){el._ut=setTimeout(function(){el.classList.remove("down")},w)}else{el.classList.remove("down")}}
+  function press(){if(pressed)return;pressed=true;holdDown(btn);dropLed();click(true);buzz(14)}
+  function release(){if(!pressed)return;pressed=false;holdUp(btn);click(false);buzz(6)}
 
   btn.addEventListener("pointerdown",function(e){
     if(e.pointerType==="mouse"&&e.button!==0)return;
@@ -463,8 +467,8 @@ body{
     if(e.key===" "||e.key==="Enter"){e.preventDefault();release()}
   });
   var sq=document.getElementById("sq"),sqPressed=false;
-  function sqPress(){if(sqPressed)return;sqPressed=true;sq.classList.add("down");clickSq(true);humStart();buzz(10)}
-  function sqRelease(){if(!sqPressed)return;sqPressed=false;sq.classList.remove("down");humStop();clickSq(false);buzz(5)}
+  function sqPress(){if(sqPressed)return;sqPressed=true;holdDown(sq);clickSq(true);humStart();buzz(10)}
+  function sqRelease(){if(!sqPressed)return;sqPressed=false;holdUp(sq);humStop();clickSq(false);buzz(5)}
   sq.addEventListener("pointerdown",function(e){
     if(e.pointerType==="mouse"&&e.button!==0)return;
     try{sq.setPointerCapture(e.pointerId)}catch(_){}
@@ -479,8 +483,8 @@ body{
   });
   sq.addEventListener("contextmenu",function(e){e.preventDefault()});
   var rb=document.getElementById("rb"),rbPressed=false;
-  function rbPress(){if(rbPressed)return;rbPressed=true;rb.classList.add("down");clickRb(true);buzz(12)}
-  function rbRelease(){if(!rbPressed)return;rbPressed=false;rb.classList.remove("down");clickRb(false);buzz(5)}
+  function rbPress(){if(rbPressed)return;rbPressed=true;holdDown(rb);clickRb(true);buzz(12)}
+  function rbRelease(){if(!rbPressed)return;rbPressed=false;holdUp(rb);clickRb(false);buzz(5)}
   rb.addEventListener("pointerdown",function(e){
     if(e.pointerType==="mouse"&&e.button!==0)return;
     try{rb.setPointerCapture(e.pointerId)}catch(_){}
@@ -495,8 +499,8 @@ body{
   });
   rb.addEventListener("contextmenu",function(e){e.preventDefault()});
   var gm=document.getElementById("gm"),gmPressed=false;
-  function gmPress(){if(gmPressed)return;gmPressed=true;gm.classList.add("down");clickGm(true);buzz(8)}
-  function gmRelease(){if(!gmPressed)return;gmPressed=false;gm.classList.remove("down");clickGm(false);buzz(4)}
+  function gmPress(){if(gmPressed)return;gmPressed=true;holdDown(gm);clickGm(true);buzz(8)}
+  function gmRelease(){if(!gmPressed)return;gmPressed=false;holdUp(gm);clickGm(false);buzz(4)}
   gm.addEventListener("pointerdown",function(e){
     if(e.pointerType==="mouse"&&e.button!==0)return;
     try{gm.setPointerCapture(e.pointerId)}catch(_){}
@@ -513,6 +517,11 @@ body{
   window.addEventListener("load",function(){try{audio()}catch(e){}});
   btn.addEventListener("contextmenu",function(e){e.preventDefault()});
   document.addEventListener("dblclick",function(e){e.preventDefault()});
+  document.addEventListener("selectstart",function(e){e.preventDefault()});
+  ["gesturestart","gesturechange","gestureend"].forEach(function(t){
+    document.addEventListener(t,function(e){e.preventDefault()});
+  });
+  document.addEventListener("touchstart",function(e){e.preventDefault()},{passive:false});
 })();
 /* 音データ（丸ボタン: down/up、四角ボタン: sqdown/squp、古びた出っ張りボタン: rbdown/rbup、ゴムのボタン: gmdown/gmup。WAV モノラル、base64） */
 window.__BTN_SND={
