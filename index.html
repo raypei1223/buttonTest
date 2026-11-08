@@ -36,10 +36,13 @@ body{
   -webkit-touch-callout:none;
 }
 .stage{
-  --s:min(78vw,52vh,380px);
+  /* 液晶(上)＋ボタン一式の全体の高さは約 1.8 × --s。それが画面の高さに収まるように --s を決める */
+  --s:min(78vw,50vh,380px);
+  padding-top:calc(var(--s)*.36); /* 液晶ぶんの高さ。液晶も含めた全体を画面の中央に置く（ボタンは従来より下がる） */
   display:flex;flex-direction:column;align-items:center;
   gap:calc(var(--s)*.1);
 }
+@supports (height:100dvh){.stage{--s:min(78vw,calc((100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))*.5),380px)}}
 .leds{display:flex;gap:calc(var(--s)*.05)}
 .led{
   position:relative;
@@ -115,14 +118,14 @@ body{
 }
 .sq.down::before{opacity:1;transition-duration:.05s}
 .sq.down .sqface{
-  transform:translateY(calc(var(--s)*.005)) scale(.96);
+  transform:translateY(calc(var(--s)*.011)) scale(.86); /* 深く沈む：穴の中へ縮みながら引き込まれる（下端は穴の縁で隠れる） */
   box-shadow:inset 0 0 0 1px rgba(0,0,0,.06),inset 0 0 0 calc(var(--s)*.006) rgba(255,255,255,.55);
   transition:transform .06s ease-out,box-shadow .06s;
 }
 .sq.down .sqface::after{opacity:.4}
 .sq.down::after{ /* 沈んだキャップの縁が穴の影に入る */
   opacity:1;transition-duration:.04s;
-  box-shadow:inset 0 0 calc(var(--s)*.014) rgba(0,0,0,.5),inset 0 calc(var(--s)*.008) calc(var(--s)*.01) rgba(0,0,0,.3),inset 0 0 0 1px var(--sq-groove);
+  box-shadow:inset 0 0 calc(var(--s)*.024) rgba(0,0,0,.65),inset 0 calc(var(--s)*.015) calc(var(--s)*.02) rgba(0,0,0,.42),inset 0 0 0 1px var(--sq-groove);
 }
 .sq:focus-visible{outline:3px solid var(--cap-hi);outline-offset:6px}
 .plate{
@@ -242,7 +245,7 @@ body{
 @media (prefers-reduced-motion:reduce){.btn::before,.cap,.lit,.glow,.rb::before,.rbcap,.gmdome,.gmdome::after,.gmdent,.gmfold,.sq,.sq::before,.sq::after,.sqface,.sqface::before,.sqface::after{transition:none}}
 .gmwrap{position:relative;display:flex}
 /* 机に貼られたシール（押せない） */
-.bell{position:absolute;left:50%;top:100%;margin:calc(var(--s)*.045) 0 0 calc(var(--s)*-.075);width:calc(var(--s)*.15);height:calc(var(--s)*.15);border-radius:22%;transform:rotate(-5deg);display:grid;place-items:center;font-size:calc(var(--s)*.075);line-height:1;pointer-events:none;
+.bell{position:absolute;left:100%;top:50%;margin:calc(var(--s)*-.075) 0 0 calc(var(--s)*.05);width:calc(var(--s)*.15);height:calc(var(--s)*.15);border-radius:22%;transform:rotate(-5deg);display:grid;place-items:center;font-size:calc(var(--s)*.075);line-height:1;pointer-events:none;
   background:linear-gradient(145deg,#f6f1e2,#e7dfc8);
   box-shadow:0 1px 0 rgba(255,255,255,.7) inset,0 0 0 1px rgba(120,105,70,.22),0 1px 1.5px rgba(40,42,38,.35),0 3px 6px rgba(40,42,38,.12);
   filter:grayscale(1) opacity(.7);transition:filter .2s}
@@ -251,7 +254,7 @@ body{
 .bell.on{filter:none}
 .stage{position:relative}
 /* 机に埋め込まれた小さな画面。普段は消灯したガラス、白いボタンを押している間だけ点灯して24時間グラフを映す */
-.chart{position:absolute;left:50%;bottom:100%;transform:translateX(-50%);width:var(--s);margin-bottom:calc(var(--s)*.07);
+.chart{position:absolute;left:50%;top:0;transform:translateX(-50%);width:var(--s);
   padding:calc(var(--s)*.014);border-radius:calc(var(--s)*.03);
   background:linear-gradient(var(--sq-groove),var(--sq-well));
   box-shadow:0 1px 0 var(--sq-edge),0 0 0 0 rgba(46,224,106,0);
@@ -427,14 +430,17 @@ body{
   }
   // 押している間だけ鳴る「ブーーン…」：点灯ボタンの電源トランス／リレーの唸り。
   // 電源周波数(50Hz)と、その2倍(100Hz)が主役で、倍音と、わずかなうねり・揺らぎが混ざる。
+  var HUM_ENABLED=false; // ← true にすると長押し音が鳴る（今は鳴らさない）
   var hum=null,humTimer=0,HUM_HOLD=350,HUM_PEAK=.05,HUM_RISE=1.3;
   // 押してから350ms経って初めて鳴らす。連打（短い押し）では鳴らない。
   function humStart(){
     humCancel();
+    if(!HUM_ENABLED)return;
     humTimer=setTimeout(function(){humTimer=0;humBegin()},HUM_HOLD);
   }
   function humCancel(){if(humTimer){clearTimeout(humTimer);humTimer=0}}
   function humBegin(){
+    if(!HUM_ENABLED)return;
     var c=audio();if(!c||hum)return;
     var t=c.currentTime;
     var out=c.createGain();
@@ -499,7 +505,7 @@ body{
   function buzz(ms){try{if(navigator.vibrate)navigator.vibrate(ms)}catch(e){}}
 
   // 緑のLED：押すたびに右から1個ずつ消える
-  var LED_COUNT=10,left=LED_COUNT,ledBox=document.getElementById("leds"),leds=[];
+  var LED_COUNT=1,left=LED_COUNT,ledBox=document.getElementById("leds"),leds=[];
   // 1日に押せるのは LED_COUNT 回まで。日付が変わると（端末の日付で）回復する。
   var PRESS_KEY="button_press_day";
   function today(){var d=new Date();return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate()}
@@ -515,12 +521,14 @@ body{
   function syncLeds(){for(var i=0;i<LED_COUNT;i++)leds[i].classList.toggle("on",i<left);showLeds()}
   function refreshDay(){var l=LED_COUNT-usedToday();if(l!==left){left=l;syncLeds()}}
   function dropLed(){if(left<=0)return;left--;saveUsed(LED_COUNT-left);leds[left].classList.remove("on");showLeds()}
+  function giveBackLed(day){if(today()!==day||left>=LED_COUNT)return;leds[left].classList.add("on");left++;saveUsed(LED_COUNT-left);showLeds()}
   syncLeds();
 
   var btn=document.getElementById("btn"),pressed=false;
   function holdDown(el){el._t0=performance.now();clearTimeout(el._ut);el.classList.add("down")}
   function holdUp(el){var w=90-(performance.now()-el._t0);if(w>0){el._ut=setTimeout(function(){el.classList.remove("down")},w)}else{el.classList.remove("down")}}
-  function press(){if(pressed)return;refreshDay();if(left<=0){say("今日はもう押せません");return}pressed=true;holdDown(btn);dropLed();click(true);buzz(14);announce()}
+  function press(){if(pressed)return;refreshDay();if(left<=0){say("今日はもう押せません",true);return}pressed=true;holdDown(btn);var day=today();dropLed();click(true);buzz(14);
+    announce().then(function(ok){if(!ok){giveBackLed(day);say("記録できませんでした。もう一度押せます",true)}})}
   function release(){if(!pressed)return;pressed=false;holdUp(btn);click(false);buzz(6)}
 
   btn.addEventListener("pointerdown",function(e){
@@ -613,6 +621,8 @@ body{
   var PRESS_TEXT="赤いボタンが押されました";
 
   var db=null,auth=null,TS=null;
+  // 通信に失敗したとき、原因（エラーコード）をコンソールに出す。画面の動きには影響しない。
+  function dbg(where,e){try{console.warn("[button] "+where+"に失敗:",(e&&e.code)||"",(e&&e.message)||e)}catch(x){}}
   try{firebase.initializeApp(firebaseConfig);auth=firebase.auth();db=firebase.database();TS=firebase.database.ServerValue.TIMESTAMP}catch(e){}
 
   function deviceId(){
@@ -638,7 +648,7 @@ body{
     if(!authP){authP=new Promise(function(res,rej){
       var un=auth.onAuthStateChanged(function(u){
         if(u){un();res(u)}
-        else auth.signInAnonymously().catch(function(e){un();authP=null;rej(e)});
+        else auth.signInAnonymously().catch(function(e){dbg("匿名ログイン",e);un();authP=null;rej(e)});
       });
     })}
     return authP;
@@ -668,7 +678,15 @@ body{
 
   // 通知スイッチ（ベル）
   var bell=document.getElementById("bell"),note=document.getElementById("note"),noteT=0,notifyOn=false;
-  function say(t){note.textContent=t;note.classList.add("on");clearTimeout(noteT);noteT=setTimeout(function(){note.classList.remove("on")},3500)}
+  // nearBtn が true のときは、赤いボタンの中心より少し上に出す（それ以外は従来どおり画面の上部）
+  function say(t,nearBtn){
+    if(nearBtn){
+      var r=btn.getBoundingClientRect();
+      note.style.left=(r.left+r.width/2)+"px";
+      note.style.top=(r.top+r.height*.36)+"px";
+      note.style.transform="translate(-50%,-50%)";
+    }else{note.style.left="";note.style.top="";note.style.transform=""}
+    note.textContent=t;note.classList.add("on");clearTimeout(noteT);noteT=setTimeout(function(){note.classList.remove("on")},3500)}
   function setBell(on){bell.classList.toggle("on",on);bell.setAttribute("aria-label",on?"通知はオン":"通知はオフ");gm.setAttribute("aria-pressed",on?"true":"false");bell.textContent=on?"🔔":"🔕"}
   function notifyOff(){try{return localStorage.getItem(NOTIFY_OFF_KEY)==="1"}catch(e){return false}}
   function setNotifyOff(v){try{if(v)localStorage.setItem(NOTIFY_OFF_KEY,"1");else localStorage.removeItem(NOTIFY_OFF_KEY)}catch(e){}}
@@ -683,7 +701,7 @@ body{
       say("通知をオフにしました");return;
     }
     Notification.requestPermission().then(function(p){
-      if(p!=="granted"){setBell(false);say("通知が許可されませんでした。ブラウザの設定から変更できます。");return}
+      if(p!=="granted"){setBell(false);say("通知が許可されませんでした。ブラウザの設定から変更できます。",true);return}
       return subscribe().then(function(ok){
         notifyOn=true;setNotifyOff(false);setBell(true);
         say(ok?"通知をオンにしました。アプリを閉じていても届きます。":"通知をオンにしました。このタブを開いたままにしてください。");
@@ -698,18 +716,23 @@ body{
     subscribe().catch(function(){});
   }
 
-  // 赤いボタンを押したとき（press() から呼ぶ）。失敗してもボタン自体の動きには影響しない。
-  //  ・通知 … Web Push（Cloudflare Worker）
-  //  ・記録 … Firebase の presses に時刻だけ残す（白ボタンのグラフ用）
+  // 赤いボタンを押したとき（press() から呼ぶ）。結果（true=数えてよい / false=記録に失敗）を Promise で返す。
+  //  ・記録 … Firebase の presses に時刻だけ残す（白ボタンのグラフ用）。ログイン失敗や権限エラーなど、はっきり失敗したときだけ false。
+  //    8秒たっても返事がないとき（圏外など）は、後から届く可能性があるので数えたままにする（true）。
+  //  ・通知 … Web Push（Cloudflare Worker）。記録が成功したとき（または Firebase を使えないとき）だけ送る。
   function announce(){
+    function notify(){try{pushPost("/notify",{topic:TOPIC,deviceId:deviceId(),sender:"ボタン",preview:PRESS_TEXT}).catch(function(){})}catch(e){}}
+    if(!db){notify();return Promise.resolve(true)}
+    var k=null;
     try{
-      if(db){
-        var r=db.ref("presses").push();
-        addPoint(r.key,Date.now()+serverOff);
-        ensureAuth().then(function(){return r.set({by:deviceId(),t:TS})}).then(cleanup).catch(function(){});
-      }
-    }catch(e){}
-    try{pushPost("/notify",{topic:TOPIC,deviceId:deviceId(),sender:"ボタン",preview:PRESS_TEXT}).catch(function(){})}catch(e){}
+      var r=db.ref("presses").push();k=r.key;
+      addPoint(k,Date.now()+serverOff);
+      var write=ensureAuth().then(function(){return r.set({by:deviceId(),t:TS})}).then(function(){return true});
+      var slow=new Promise(function(res){setTimeout(function(){res(true)},8000)});
+      return Promise.race([write,slow]).then(function(){notify();cleanup();return true}).catch(function(e){
+        dbg("押した記録の書き込み",e);delete pts[k];return false;
+      });
+    }catch(e){dbg("押した記録の書き込み",e);if(k)delete pts[k];return Promise.resolve(false)}
   }
   function clearNotes(){
     if(!notifyOn)return;
@@ -725,7 +748,7 @@ body{
     if(!db)return Promise.resolve();
     return ensureAuth().then(function(){return db.ref("presses").limitToLast(500).once("value")}).then(function(sn){
       sn.forEach(function(c){var v=c.val();if(v&&typeof v.t==="number")pts[c.key]=v.t});
-    }).catch(function(){});
+    }).catch(function(e){dbg("押した記録の読み込み",e)});
   }
   function seeded(seed){var a=seed>>>0;return function(){a=(a+0x6D2B79F5)>>>0;var t=a;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296}}
   function hashKey(k){var h=5381;for(var i=0;i<k.length;i++)h=((h<<5)+h+k.charCodeAt(i))|0;return h}
@@ -776,7 +799,7 @@ body{
 
   // ===== 古びたボタンを押している間、その日の「テーマ」を画面に映す =====
   // Firebase の themes に「テーマの一覧」を入れておく（文字列を1件ずつ。配列でも push キーでもよい）。
-  // その日のテーマは、日付から決まる疑似乱数で一覧から1つ選ぶ。同じ日・同じ一覧なら全員が同じテーマになる。
+  // その日のテーマは、日付から決まる順番で一覧から1つ選ぶ（連続した日は重ならない）。同じ日・同じ一覧なら全員が同じテーマになる。
   // 日付の区切りは日本時間(JST)の0時で固定。一覧が空・未登録・通信できないときは「無条件」。
   var DEFAULT_THEME="無条件",themeList=null,themeOn=false;
   function themeKey(addDays){
@@ -791,17 +814,28 @@ body{
       var list=[];
       sn.forEach(function(c){var v=c.val();if(typeof v==="string"&&v.trim())list.push(v.trim())}); // キー順＝全端末で同じ並び
       return{list:list,ok:true};
-    }).catch(function(){return def});
+    }).catch(function(e){dbg("テーマの読み込み",e);return def});
     var to=new Promise(function(res){setTimeout(function(){res(def)},2500)}); // 圏外で待ち続けないように
     return Promise.race([q,to]);
   }
-  // 日付 → 一覧の番号。昨日と同じテーマが続かないよう、被ったら1つずらす（一覧が2件以上のとき）。
+  // 日付 → その日のテーマ。連続した日に同じテーマが出ないようにする。
+  //  ・一覧がn件（3件以上）のとき、n日ごとに一覧を疑似乱数でシャッフルし、その並びを1日ずつ使う（n日間は重ならない）。
+  //  ・次のまとまりの先頭が、前のまとまりの最後と同じになるときは、先頭と2番目を入れ替える。
+  //  ・1件ならそのテーマ、2件なら日替わりで交互。どれも日付だけで決まるので、同じ日・同じ一覧なら全員が同じテーマになる。
   function pickTheme(list){
     var n=list.length;if(!n)return DEFAULT_THEME;
-    function idx(k){return Math.floor(seeded(hashKey(k))()*n)}
-    var i=idx(themeKey(0));
-    if(n>1&&i===idx(themeKey(-1)))i=(i+1)%n;
-    return list[i];
+    var day=Math.floor((Date.now()+serverOff+9*3600000)/86400000); // 日本時間の日数
+    if(n===1)return list[0];
+    if(n===2)return list[day%2];
+    function deck(c){
+      var a=[],r=seeded(hashKey("theme-"+c)),i,j,t;
+      for(i=0;i<n;i++)a.push(i);
+      for(i=n-1;i>0;i--){j=Math.floor(r()*(i+1));t=a[i];a[i]=a[j];a[j]=t}
+      return a;
+    }
+    var c=Math.floor(day/n),d=deck(c);
+    if(d[0]===deck(c-1)[n-1]){var t=d[0];d[0]=d[1];d[1]=t}
+    return list[d[day%n]];
   }
   function escSvg(t){return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
   function renderTheme(text,key){
@@ -852,7 +886,7 @@ body{
         });
       }
       return step(0);
-    }).catch(function(){});
+    }).catch(function(e){dbg("古い記録の削除",e)});
   }
   renderChart(); // 消灯したガラスの画面を、最初から机に置いておく
   document.addEventListener("visibilitychange",function(){if(!document.hidden)clearNotes()});
