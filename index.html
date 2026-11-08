@@ -451,13 +451,28 @@ body{
   document.addEventListener("visibilitychange",function(){
     if(document.hidden){humStop(true)}
     else{try{refreshDay()}catch(e){}}
-    if(!document.hidden&&ctx){
-      // 復帰時にiOSのオーディオが壊れていることがあるため、作り直して次のタップで再生成する
-      try{ctx.close()}catch(e){}
-      ctx=null;
-    }
+    if(!document.hidden)unlockAudio();
   });
-  window.addEventListener("pageshow",function(e){if(e.persisted&&ctx){try{ctx.close()}catch(x){}ctx=null}});
+  window.addEventListener("pageshow",function(e){if(e.persisted)unlockAudio()});
+  // 別アプリから戻ると音が止まる対策。
+  // 以前は復帰時にAudioContextを作り直していたが、iOSは「指を離した瞬間」でないと音を有効にできず、
+  // 押した瞬間(pointerdown)に作った新しいContextは無音のままだった。
+  // → 作り直さずに resume を試し、ダメなら指を離したとき(ユーザー操作の中)に作り直す。
+  function silentPing(c){try{var b=c.createBuffer(1,1,22050),n=c.createBufferSource();n.buffer=b;n.connect(c.destination);n.start(0)}catch(e){}}
+  function unlockAudio(){
+    if(!ctx||ctx.state==="closed"){if(ctx||document.hidden===false){var c0=audio();if(c0)silentPing(c0)}return}
+    if(ctx.state==="running")return;
+    var c=ctx;
+    try{var p=c.resume();if(p&&p.then)p.then(function(){silentPing(c)},function(){})}catch(e){}
+    setTimeout(function(){
+      if(ctx===c&&c.state!=="running"){
+        try{c.close()}catch(e){}
+        ctx=null;
+        var n=audio();if(n)silentPing(n);
+      }
+    },300);
+  }
+  ["pointerup","touchend","click","keyup"].forEach(function(t){document.addEventListener(t,unlockAudio,true)});
   function buzz(ms){try{if(navigator.vibrate)navigator.vibrate(ms)}catch(e){}}
 
   // 緑のLED：押すたびに右から1個ずつ消える
