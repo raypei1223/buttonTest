@@ -239,9 +239,15 @@ body{
 .gm.down .gmdome::after{opacity:.15}
 .gm:focus-visible{outline:3px solid var(--cap-hi);outline-offset:4px}
 @media (prefers-reduced-motion:reduce){.btn::before,.cap,.lit,.glow,.rb::before,.rbcap,.gmdome,.gmdome::after,.gmdent,.gmfold,.sq,.sq::before,.sq::after,.sqface,.sqface::before,.sqface::after{transition:none}}
-.bell{position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);right:12px;width:40px;height:40px;padding:0;border:0;border-radius:50%;background:rgba(40,42,38,.22);color:#fff;font-size:18px;line-height:40px;text-align:center;opacity:.55;z-index:5;cursor:pointer}
-.bell.on{opacity:.95}
-.bell:focus-visible{outline:3px solid var(--cap-hi);outline-offset:3px}
+.gmwrap{position:relative;display:flex}
+/* 机に貼られたシール（押せない） */
+.bell{position:absolute;left:50%;top:100%;margin:calc(var(--s)*.045) 0 0 calc(var(--s)*-.075);width:calc(var(--s)*.15);height:calc(var(--s)*.15);border-radius:22%;transform:rotate(-5deg);display:grid;place-items:center;font-size:calc(var(--s)*.075);line-height:1;pointer-events:none;
+  background:linear-gradient(145deg,#f6f1e2,#e7dfc8);
+  box-shadow:0 1px 0 rgba(255,255,255,.7) inset,0 0 0 1px rgba(120,105,70,.22),0 1px 1.5px rgba(40,42,38,.35),0 3px 6px rgba(40,42,38,.12);
+  filter:grayscale(1) opacity(.7);transition:filter .2s}
+.bell::before{content:"";position:absolute;inset:0;border-radius:inherit;background:repeating-linear-gradient(115deg,rgba(255,255,255,.0) 0 5px,rgba(255,255,255,.18) 5px 6px);pointer-events:none}
+.bell::after{content:"";position:absolute;right:0;bottom:0;width:7%;height:7%;border-radius:0 0 22% 0;background:linear-gradient(135deg,rgba(0,0,0,0) 50%,rgba(110,95,60,.28) 50%,rgba(250,246,234,.95) 100%);box-shadow:-1px -1px 2px rgba(40,42,38,.15);pointer-events:none}
+.bell.on{filter:none}
 .note{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 58px);transform:translateX(-50%);max-width:min(88vw,360px);padding:8px 14px;border-radius:10px;background:rgba(30,30,30,.82);color:#fff;font:13px/1.5 system-ui,sans-serif;text-align:center;opacity:0;pointer-events:none;transition:opacity .25s;z-index:6}
 .note.on{opacity:1}
 </style>
@@ -255,10 +261,9 @@ body{
 <div class="smalls">
 <button class="sq" id="sq" type="button" aria-label="小さなボタン"><span class="sqface"></span></button>
 <button class="rb" id="rb" type="button" aria-label="古びたボタン"><span class="rbcap"></span></button>
-<button class="gm" id="gm" type="button" aria-label="ゴムのボタン"><span class="gmdome"><span class="gmdent"></span><span class="gmfold"></span></span></button>
+<div class="gmwrap"><button class="gm" id="gm" type="button" aria-label="通知のオン・オフ" aria-pressed="false"><span class="gmdome"><span class="gmdent"></span><span class="gmfold"></span></span></button><div class="bell" id="bell" role="img" aria-label="通知はオフ">🔕</div></div>
 </div>
 </div>
-<button class="bell" id="bell" type="button" aria-label="通知" aria-pressed="false">🔕</button>
 <div class="note" id="note" role="status" aria-live="polite"></div>
 <script>
 (function(){
@@ -444,7 +449,8 @@ body{
   }
   document.addEventListener("visibilitychange",function(){
     if(document.hidden){humStop(true)}
-    else if(ctx){
+    else{try{refreshDay()}catch(e){}}
+    if(!document.hidden&&ctx){
       // 復帰時にiOSのオーディオが壊れていることがあるため、作り直して次のタップで再生成する
       try{ctx.close()}catch(e){}
       ctx=null;
@@ -455,19 +461,27 @@ body{
 
   // 緑のLED：押すたびに右から1個ずつ消える
   var LED_COUNT=10,left=LED_COUNT,ledBox=document.getElementById("leds"),leds=[];
+  // 1日に押せるのは LED_COUNT 回まで。日付が変わると（端末の日付で）回復する。
+  var PRESS_KEY="button_press_day";
+  function today(){var d=new Date();return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate()}
+  function usedToday(){try{var o=JSON.parse(localStorage.getItem(PRESS_KEY)||"null");return(o&&o.d===today())?Math.max(0,Math.min(LED_COUNT,o.n|0)):0}catch(e){return 0}}
+  function saveUsed(n){try{localStorage.setItem(PRESS_KEY,JSON.stringify({d:today(),n:n}))}catch(e){}}
+  left=LED_COUNT-usedToday();
   for(var i=0;i<LED_COUNT;i++){
     var l=document.createElement("span");l.className="led on";
     l.innerHTML='<span class="glow"></span><span class="lens"><span class="lit"></span></span>';
     ledBox.appendChild(l);leds.push(l);
   }
   function showLeds(){ledBox.setAttribute("aria-label","残り "+left)}
-  function dropLed(){if(left<=0)return;left--;leds[left].classList.remove("on");showLeds()}
-  showLeds();
+  function syncLeds(){for(var i=0;i<LED_COUNT;i++)leds[i].classList.toggle("on",i<left);showLeds()}
+  function refreshDay(){var l=LED_COUNT-usedToday();if(l!==left){left=l;syncLeds()}}
+  function dropLed(){if(left<=0)return;left--;saveUsed(LED_COUNT-left);leds[left].classList.remove("on");showLeds()}
+  syncLeds();
 
   var btn=document.getElementById("btn"),pressed=false;
   function holdDown(el){el._t0=performance.now();clearTimeout(el._ut);el.classList.add("down")}
   function holdUp(el){var w=90-(performance.now()-el._t0);if(w>0){el._ut=setTimeout(function(){el.classList.remove("down")},w)}else{el.classList.remove("down")}}
-  function press(){if(pressed)return;pressed=true;holdDown(btn);dropLed();click(true);buzz(14);announce()}
+  function press(){if(pressed)return;refreshDay();if(left<=0){say("今日はもう押せません（1日"+LED_COUNT+"回まで）");return}pressed=true;holdDown(btn);dropLed();click(true);buzz(14);announce()}
   function release(){if(!pressed)return;pressed=false;holdUp(btn);click(false);buzz(6)}
 
   btn.addEventListener("pointerdown",function(e){
@@ -537,7 +551,7 @@ body{
   ["gesturestart","gesturechange","gestureend"].forEach(function(t){
     document.addEventListener(t,function(e){e.preventDefault()});
   });
-  document.addEventListener("touchstart",function(e){if(e.target&&e.target.closest&&e.target.closest("#bell"))return;e.preventDefault()},{passive:false});
+  document.addEventListener("touchstart",function(e){if(e.target&&e.target.closest&&e.target.closest("#gm"))return;e.preventDefault()},{passive:false});
 
   // ===== 通信（Firebase）と通知 =====
   // 赤いボタン(#btn)を押すたびに、このアプリを使っているほかの人へ通知する。
@@ -616,11 +630,13 @@ body{
   // 通知スイッチ（ベル）
   var bell=document.getElementById("bell"),note=document.getElementById("note"),noteT=0,notifyOn=false;
   function say(t){note.textContent=t;note.classList.add("on");clearTimeout(noteT);noteT=setTimeout(function(){note.classList.remove("on")},3500)}
-  function setBell(on){bell.classList.toggle("on",on);bell.setAttribute("aria-pressed",on?"true":"false");bell.textContent=on?"🔔":"🔕"}
+  function setBell(on){bell.classList.toggle("on",on);bell.setAttribute("aria-label",on?"通知はオン":"通知はオフ");gm.setAttribute("aria-pressed",on?"true":"false");bell.textContent=on?"🔔":"🔕"}
   function notifyOff(){try{return localStorage.getItem(NOTIFY_OFF_KEY)==="1"}catch(e){return false}}
   function setNotifyOff(v){try{if(v)localStorage.setItem(NOTIFY_OFF_KEY,"1");else localStorage.removeItem(NOTIFY_OFF_KEY)}catch(e){}}
 
-  bell.addEventListener("click",function(){
+  var lastToggle=0;
+  function toggleNotify(){
+    var t=Date.now();if(t-lastToggle<400)return;lastToggle=t;
     if(!pushOK()){say("この端末・ブラウザでは通知を使えません。iPhone は「ホーム画面に追加」してから開いてください。");return}
     if(notifyOn){
       notifyOn=false;setNotifyOff(true);setBell(false);
@@ -634,7 +650,9 @@ body{
         say(ok?"通知をオンにしました。アプリを閉じていても届きます。":"通知をオンにしました。このタブを開いたままにしてください。");
       });
     }).catch(function(){say("通知を設定できませんでした")});
-  });
+  }
+  gm.addEventListener("click",toggleNotify);
+  gm.addEventListener("keyup",function(e){if(e.key===" "||e.key==="Enter")toggleNotify()});
   setBell(false);
   if(pushOK()&&Notification.permission==="granted"&&!notifyOff()){
     notifyOn=true;setBell(true);
