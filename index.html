@@ -618,7 +618,7 @@ body{
   var VAPID_PUBLIC_KEY="BH9EL0PjbYENYjVQn-NYIaHnQwkW1EPS9qhyK3rCNPWKHzIr3DLmUGbw7KpdYEWtG0ora_qxW09EkXZLP19T8js";
   var TOPIC="button-all";                  // このアプリを使っている人みんなで1つの宛先
   var DEVICE_ID_KEY="button_device_id",NOTIFY_OFF_KEY="button_notify_off";
-  var PRESS_TEXT="赤いボタンが押されました";
+  var PRESS_TEXT="誰かがボタンを押しました";
 
   var db=null,auth=null,TS=null;
   // 通信に失敗したとき、原因（エラーコード）をコンソールに出す。画面の動きには影響しない。
@@ -741,7 +741,7 @@ body{
 
   // ===== 白いボタンを押している間だけ出る、24時間グラフ =====
   // 横軸＝過去24時間（右端が現在）。赤ボタンが押された時刻に点を打つ。縦位置はランダムだが、できるだけ重ならないよう選ぶ。
-  var serverOff=0,chartEl=document.getElementById("chart"),chartOn=false,pts={};
+  var serverOff=0,chartEl=document.getElementById("chart"),chartOn=false,pts={},loadingN=0; // loadingN: グラフ用のデータを読み込み中の数（0より大きい間は LOADING… を出す）
   if(db){try{db.ref(".info/serverTimeOffset").on("value",function(sn){serverOff=sn.val()||0})}catch(e){}}
   function addPoint(k,t){pts[k]=t}
   function loadPresses(){
@@ -754,24 +754,24 @@ body{
   function hashKey(k){var h=5381;for(var i=0;i<k.length;i++)h=((h<<5)+h+k.charCodeAt(i))|0;return h}
   function renderChart(){
     var W=320,H=84,L=10,R=10,T=10,B=17,pw=W-L-R,ph=H-T-B,DAY=86400000;
-    var now=Date.now()+serverOff,t0=now-DAY,list=[];
-    Object.keys(pts).forEach(function(k){var t=pts[k];if(t>=t0&&t<=now+60000)list.push({k:k,t:t})});
+    // 範囲は「その日の0時〜翌0時」（端末の時計）。日付が変わると、グラフは空に戻る。
+    var now=Date.now()+serverOff,day0=new Date(now);day0.setHours(0,0,0,0);
+    var t0=day0.getTime(),t1=new Date(day0.getFullYear(),day0.getMonth(),day0.getDate()+1).getTime(),SPAN=t1-t0,list=[];
+    Object.keys(pts).forEach(function(k){var t=pts[k];if(t>=t0&&t<t1&&t<=now+60000)list.push({k:k,t:t})});
     list.sort(function(a,b){return a.t-b.t});
     var svg='<svg viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">'
       +'<defs><radialGradient id="dg"><stop offset="0" stop-color="#f4fff7"/><stop offset=".22" stop-color="#7dffa6"/><stop offset=".55" stop-color="#2ee06a"/><stop offset="1" stop-color="#2ee06a" stop-opacity="0"/></radialGradient>'
       +'<pattern id="sl" width="4" height="3" patternUnits="userSpaceOnUse"><rect width="4" height="1" y="2" fill="#000" opacity=".22"/></pattern></defs>'
       +'<g class="c"><line class="l" x1="'+L+'" x2="'+(W-R)+'" y1="'+(T+ph)+'" y2="'+(T+ph)+'"/>';
-    // 6時間ごとの目盛り（端末の時計の 0・6・12・18 時）
-    var d=new Date(t0);d.setMinutes(0,0,0);d.setHours(d.getHours()+1);
-    for(var ts=d.getTime();ts<=now;ts+=3600000){
-      var hh=new Date(ts).getHours();if(hh%6)continue;
-      var x=L+(ts-t0)/DAY*pw;
-      svg+='<line class="l" x1="'+x.toFixed(1)+'" x2="'+x.toFixed(1)+'" y1="'+T+'" y2="'+(T+ph)+'"/><text class="t" text-anchor="middle" x="'+x.toFixed(1)+'" y="'+(H-5)+'">'+hh+'</text>';
+    // 6時間ごとの目盛り（0・6・12・18・24 時）
+    for(var h=0;h<=24;h+=6){
+      var ts=new Date(day0.getFullYear(),day0.getMonth(),day0.getDate(),h).getTime(),x=L+(ts-t0)/SPAN*pw;
+      svg+='<line class="l" x1="'+x.toFixed(1)+'" x2="'+x.toFixed(1)+'" y1="'+T+'" y2="'+(T+ph)+'"/><text class="t" text-anchor="middle" x="'+x.toFixed(1)+'" y="'+(H-5)+'">'+h+'</text>';
     }
     // 点：各点ごとに乱数（キー由来なので毎回同じ位置）で候補を出し、すでにある点から一番離れた位置を選ぶ
     var placed=[],yMin=T+4,yMax=T+ph-4,dots='';
     list.forEach(function(p){
-      var x=L+(p.t-t0)/DAY*pw,rnd=seeded(hashKey(p.k)),best=yMin+rnd()*(yMax-yMin),bestScore=-1;
+      var x=L+(p.t-t0)/SPAN*pw,rnd=seeded(hashKey(p.k)),best=yMin+rnd()*(yMax-yMin),bestScore=-1;
       for(var c=0;c<16;c++){
         var y=yMin+rnd()*(yMax-yMin),score=1e9;
         for(var i=placed.length-1;i>=0;i--){
@@ -784,7 +784,8 @@ body{
       dots+='<circle cx="'+x.toFixed(1)+'" cy="'+best.toFixed(1)+'" r="4.2" fill="url(#dg)"/>';
     });
     svg+=dots;
-    if(!list.length)svg+='<text class="t" text-anchor="middle" x="'+(W/2)+'" y="'+(T+ph/2+3)+'">NO DATA</text>';
+    // 点がないとき：読み込み中なら LOADING…、読み込みが終わって本当に何もなければ NO DATA
+    if(!list.length)svg+='<text class="t" text-anchor="middle" x="'+(W/2)+'" y="'+(T+ph/2+3)+'">'+(loadingN>0?'LOADING…':'NO DATA')+'</text>';
     chartEl.innerHTML=svg+'</g><rect width="'+W+'" height="'+H+'" fill="url(#sl)"/></svg>';
   }
   // 画面を点灯しているのが、グラフ(白ボタン)かテーマ(古びたボタン)か。消すときは自分が点けた分だけ消す。
@@ -792,8 +793,8 @@ body{
   function lightOn(m){screenMode=m;chartEl.classList.add("on")}
   function lightOff(m){if(screenMode===m){screenMode="";chartEl.classList.remove("on")}}
   function showChart(){
-    chartOn=true;renderChart();lightOn("chart");
-    loadPresses().then(function(){if(chartOn&&screenMode==="chart")renderChart();cleanup()});
+    chartOn=true;loadingN++;renderChart();lightOn("chart");
+    loadPresses().then(function(){loadingN--;if(chartOn&&screenMode==="chart")renderChart();cleanup()});
   }
   function hideChart(){chartOn=false;lightOff("chart")}
 
