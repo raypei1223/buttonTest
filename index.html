@@ -84,12 +84,12 @@ body{
   position:absolute;inset:calc(var(--s)*.005);
   border-radius:0;
   background:radial-gradient(circle at 50% 58%,rgba(150,146,128,.3),rgba(150,146,128,0) 68%),linear-gradient(180deg,var(--lens-a),var(--lens-b));
-  box-shadow:inset 0 0 0 1px var(--lens-edge),inset 0 0 0 calc(var(--s)*.011) rgba(255,255,255,.3),inset 0 0 0 calc(var(--s)*.013) rgba(120,114,92,.18),inset 0 calc(var(--s)*-.008) calc(var(--s)*.012) rgba(110,100,70,.2);
+  box-shadow:inset 0 0 0 1px var(--lens-edge),inset 0 0 0 calc(var(--s)*.005) rgba(255,255,255,.3),inset 0 0 0 calc(var(--s)*.007) rgba(120,114,92,.12),inset 0 calc(var(--s)*-.003) calc(var(--s)*.006) rgba(110,100,70,.1);
   transition:transform .12s ease-out,background .4s ease-out,box-shadow .45s ease-out;
 }
 .sqface::before{ /* 中央のLEDが点灯：中心が最も明るく、外側へ弱まる */
   content:"";position:absolute;inset:0;pointer-events:none;
-  background:radial-gradient(circle at 50% 50%,#fff 0,#fff 7%,rgba(255,255,255,.96) 18%,rgba(255,255,255,.78) 45%,rgba(255,255,255,.42) 100%);
+  background:radial-gradient(circle at 50% 50%,#fff 0,#fff 5%,rgba(255,255,255,.92) 10%,rgba(255,255,255,.52) 20%,rgba(255,255,255,.34) 48%,rgba(255,255,255,.26) 100%);
   opacity:0;transition:opacity .45s ease-out;
 }
 .sq.down .sqface::before{opacity:1;transition-duration:.04s}
@@ -106,7 +106,7 @@ body{
 }
 .sq::before{ /* 点灯したキャップの光が穴の壁を白く照らす */
   content:"";position:absolute;inset:0;pointer-events:none;
-  background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.75),rgba(255,255,255,0) 72%);
+  background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.85),rgba(255,255,255,0) 50%);
   opacity:0;transition:opacity .45s ease-out;
 }
 .sq.down{
@@ -115,14 +115,14 @@ body{
 }
 .sq.down::before{opacity:1;transition-duration:.05s}
 .sq.down .sqface{
-  transform:translateY(calc(var(--s)*.014)) scale(.84);
-  box-shadow:inset 0 0 0 1px rgba(0,0,0,.12),inset 0 0 0 calc(var(--s)*.011) rgba(255,255,255,.35);
+  transform:translateY(calc(var(--s)*.005)) scale(.96);
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.06),inset 0 0 0 calc(var(--s)*.006) rgba(255,255,255,.55);
   transition:transform .06s ease-out,box-shadow .06s;
 }
 .sq.down .sqface::after{opacity:.4}
 .sq.down::after{ /* 沈んだキャップの縁が穴の影に入る */
   opacity:1;transition-duration:.04s;
-  box-shadow:inset 0 0 calc(var(--s)*.022) rgba(0,0,0,.7),inset 0 calc(var(--s)*.014) calc(var(--s)*.016) rgba(0,0,0,.45),inset 0 0 0 1px var(--sq-groove);
+  box-shadow:inset 0 0 calc(var(--s)*.014) rgba(0,0,0,.5),inset 0 calc(var(--s)*.008) calc(var(--s)*.01) rgba(0,0,0,.3),inset 0 0 0 1px var(--sq-groove);
 }
 .sq:focus-visible{outline:3px solid var(--cap-hi);outline-offset:6px}
 .plate{
@@ -144,6 +144,7 @@ body{
   width:84%;height:84%;border-radius:50%;
   cursor:pointer;
   touch-action:manipulation;
+  transform:translateY(calc(var(--s)*-.025)); /* 側面の厚み(.05)の半分だけ上げ、キャップ+側面の塊を穴の中央に見せる */
 }
 .btn::before{ /* side of the cap */
   content:"";position:absolute;inset:0;border-radius:50%;
@@ -158,7 +159,7 @@ body{
   box-shadow:inset 0 3px 4px rgba(255,255,255,.28),inset 0 -6px 12px rgba(0,0,0,.28);
   transition:transform .09s ease-out;
 }
-.btn.down::before{transform:translateY(calc(var(--s)*.012));box-shadow:0 1px 2px rgba(0,0,0,.5)}
+.btn.down::before{transform:translateY(calc(var(--s)*.038));box-shadow:0 1px 2px rgba(0,0,0,.5)}
 .btn.down .cap{transform:translateY(calc(var(--s)*.038));transition-duration:.04s}
 .btn:focus-visible{outline:3px solid var(--cap-hi);outline-offset:6px}
 .smalls{display:flex;align-items:center;gap:calc(var(--s)*.09)}
@@ -184,7 +185,7 @@ body{
   box-shadow:inset 0 1px 0 var(--rb-edge),inset 0 0 0 1px rgba(90,80,55,.18),inset 0 calc(var(--s)*-.008) calc(var(--s)*.012) rgba(95,85,60,.22);
   transition:transform .09s ease-out;
 }
-.rb.down::before{transform:translateY(calc(var(--s)*.008));box-shadow:0 1px 2px rgba(0,0,0,.4)}
+.rb.down::before{transform:translateY(calc(var(--s)*.022));box-shadow:0 1px 2px rgba(0,0,0,.4)}
 .rb.down .rbcap{transform:translateY(calc(var(--s)*.022));transition-duration:.04s}
 .rb:focus-visible{outline:3px solid var(--cap-hi);outline-offset:6px}
 /* 小さな黒いゴムのボタン：丸く盛り上がったドームを押すと、ふにゃっと潰れる */
@@ -403,7 +404,7 @@ body{
   }
   // 押している間だけ鳴る「ブーーン…」：点灯ボタンの電源トランス／リレーの唸り。
   // 電源周波数(50Hz)と、その2倍(100Hz)が主役で、倍音と、わずかなうねり・揺らぎが混ざる。
-  var hum=null,humTimer=0,HUM_HOLD=350,HUM_PEAK=.045,HUM_RISE=1.3;
+  var hum=null,humTimer=0,HUM_HOLD=350,HUM_PEAK=.05,HUM_RISE=1.3;
   // 押してから350ms経って初めて鳴らす。連打（短い押し）では鳴らない。
   function humStart(){
     humCancel();
@@ -417,10 +418,10 @@ body{
     out.gain.value=0; // 既定値は1なので、必ず0から始める（これを忘れると大音量になる）
     out.gain.setValueAtTime(0,t);
     out.gain.linearRampToValueAtTime(HUM_PEAK,t+HUM_RISE); // ゆっくり立ち上がる「ブーーーン」
-    var lp=c.createBiquadFilter();lp.type="lowpass";lp.frequency.value=380;lp.Q.value=.7;
+    var lp=c.createBiquadFilter();lp.type="lowpass";lp.frequency.value=1100;lp.Q.value=.7; // スマホのスピーカーは約150Hz未満が出ないので、聞こえる倍音(200〜600Hz)も通す
     lp.connect(out);out.connect(c.destination);
     var oscs=[];
-    [[50,"sine",.8],[100,"sine",.7],[50.4,"sawtooth",.2],[150,"sine",.25],[200,"sine",.12]].forEach(function(p){
+    [[50,"sine",.35],[100,"sine",.5],[50.4,"sawtooth",.15],[100.3,"sawtooth",.2],[150,"sine",.4],[200,"sine",.45],[300,"sine",.35],[400,"sine",.25],[600,"sine",.12]].forEach(function(p){
       var o=c.createOscillator();o.type=p[1];
       o.frequency.setValueAtTime(p[0]*.8,t);
       o.frequency.exponentialRampToValueAtTime(p[0],t+1.1); // 通電しながら周波数がゆっくり乗る
