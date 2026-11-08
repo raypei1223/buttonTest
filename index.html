@@ -816,22 +816,46 @@ body{
   // Firebase の themes に「テーマの一覧」を入れておく（文字列を1件ずつ。配列でも push キーでもよい）。
   // その日のテーマは、日付から決まる順番で一覧から1つ選ぶ（連続した日は重ならない）。同じ日・同じ一覧なら全員が同じテーマになる。
   // 日付の区切りは日本時間(JST)の0時で固定。一覧が空・未登録・通信できないときは「無条件」。
-  var DEFAULT_THEME="無条件",themeList=null,themeOn=false;
+  // 最初に決まった時点で、そのテーマのキーを dailyTheme/<日付> に記録する。以降はその日、全員がそれを使うので、
+  // あとから themes に項目を足したり消したりしても、今日のテーマは動かない（変わるのは明日以降）。
+  var DEFAULT_THEME="無条件",themeCache=null,themeOn=false; // themeCache: {key:日付, text:その日のテーマ}
   function themeKey(addDays){
     var d=new Date(Date.now()+serverOff+9*3600000+(addDays||0)*86400000);
     function z(n){return(n<10?"0":"")+n}
     return d.getUTCFullYear()+"-"+z(d.getUTCMonth()+1)+"-"+z(d.getUTCDate());
   }
+  // themes を読む。各項目は {k:キー, text:文字列}。キー順＝全端末で同じ並び。
   function fetchThemeList(){
     var def={list:[],ok:false};
     if(!db)return Promise.resolve(def);
-    var q=ensureAuth().then(function(){return db.ref("themes").once("value")}).then(function(sn){
+    return ensureAuth().then(function(){return db.ref("themes").once("value")}).then(function(sn){
       var list=[];
-      sn.forEach(function(c){var v=c.val();if(typeof v==="string"&&v.trim())list.push(v.trim())}); // キー順＝全端末で同じ並び
+      sn.forEach(function(c){var v=c.val();if(typeof v==="string"&&v.trim())list.push({k:c.key,text:v.trim()})});
       return{list:list,ok:true};
     }).catch(function(e){dbg("テーマの読み込み",e);return def});
-    var to=new Promise(function(res){setTimeout(function(){res(def)},2500)}); // 圏外で待ち続けないように
-    return Promise.race([q,to]);
+  }
+  function findTheme(list,k){for(var i=0;i<list.length;i++)if(list[i].k===k)return list[i];return null}
+  // その日のテーマを決める。戻り値は {text, cache}（cache=true なら、このページを開いている間は使い回してよい）。
+  //  1) dailyTheme/<日付> にキーが記録済みなら、それを使う。
+  //  2) なければ、日付から計算して選び、記録する（先に書いた人が勝ち。負けたら、書かれていたほうを使う）。
+  //  3) 記録の読み書きに失敗したときは、計算した結果をそのまま表示する（使い回さず、次回また試す）。
+  function resolveTheme(key){
+    var def={text:DEFAULT_THEME,cache:false};
+    var flow=fetchThemeList().then(function(r){
+      if(!r.ok)return def;
+      if(!r.list.length)return{text:DEFAULT_THEME,cache:true};
+      var ref=db.ref("dailyTheme/"+key),pick=pickTheme(r.list);
+      return ref.once("value").then(function(sn){
+        var pinned=findTheme(r.list,sn.val());
+        if(pinned)return{text:pinned.text,cache:true};
+        return ref.transaction(function(cur){return cur===null?pick.k:undefined}).then(function(res){
+          var w=findTheme(r.list,res.snapshot.val())||pick;
+          return{text:w.text,cache:true};
+        });
+      }).catch(function(e){dbg("今日のテーマの記録",e);return{text:pick.text,cache:false}});
+    });
+    var to=new Promise(function(res){setTimeout(function(){res(def)},4000)}); // 圏外で待ち続けないように
+    return Promise.race([flow,to]);
   }
   // 日付 → その日のテーマ。連続した日に同じテーマが出ないようにする。
   //  ・一覧がn件（3件以上）のとき、n日ごとに一覧を疑似乱数でシャッフルし、その並びを1日ずつ使う（n日間は重ならない）。
@@ -871,12 +895,12 @@ body{
   }
   function showTheme(){
     themeOn=true;var key=themeKey(0);
-    if(themeList!==null)renderTheme(pickTheme(themeList),key);
+    if(themeCache&&themeCache.key===key)renderTheme(themeCache.text,key);
     else{
       renderTheme(null,key);
-      fetchThemeList().then(function(r){
-        if(r.ok)themeList=r.list;
-        if(themeOn&&screenMode==="theme")renderTheme(pickTheme(r.list),themeKey(0));
+      resolveTheme(key).then(function(r){
+        if(r.cache)themeCache={key:key,text:r.text};
+        if(themeOn&&screenMode==="theme"&&themeKey(0)===key)renderTheme(r.text,key);
       });
     }
     lightOn("theme");
