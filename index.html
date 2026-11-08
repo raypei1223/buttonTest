@@ -728,23 +728,25 @@ body{
     subscribe().catch(function(){});
   }
 
-  // 赤いボタンを押したとき（press() から呼ぶ）。結果（true=数えてよい / false=記録に失敗）を Promise で返す。
-  //  ・記録 … Firebase の presses に時刻だけ残す（白ボタンのグラフ用）。ログイン失敗や権限エラーなど、はっきり失敗したときだけ false。
-  //    8秒たっても返事がないとき（圏外など）は、後から届く可能性があるので数えたままにする（true）。
+  // 赤いボタンを離したとき（release() から呼ぶ）。結果（true=数えてよい / false=記録に失敗）を Promise で返す。
+  //  ・記録 … Firebase の pressCounts/<日付(JST)>/<5分ごとの区間> を +1 する。時刻の細かい値や端末IDは残さない（データを軽くするため）。
+  //    ログイン失敗や権限エラーなど、はっきり失敗したときだけ false。8秒たっても返事がないとき（圏外など）は、数えたままにする（true）。
   //  ・通知 … Web Push（Cloudflare Worker）。記録が成功したとき（または Firebase を使えないとき）だけ送る。
   function announce(){
     function notify(){try{pushPost("/notify",{topic:TOPIC,deviceId:deviceId(),sender:"ボタン",preview:PRESS_TEXT}).catch(function(){})}catch(e){}}
     if(!db){notify();return Promise.resolve(true)}
-    var k=null;
+    var dk=themeKey(0),now=Date.now()+serverOff;
+    var b=Math.max(0,Math.min(287,Math.floor((now-jstDayStart(now))/BUCKET)));
+    if(countsDay!==dk){counts={};unacked={};countsDay=dk}
+    unacked[b]=(unacked[b]||0)+1; // 書き込みの返事が来るまでは、自分の分を「未確定」として画面に足しておく
+    function settle(ok){if(countsDay===dk){unacked[b]=Math.max(0,(unacked[b]||0)-1);if(ok)counts[b]=(counts[b]||0)+1}}
     try{
-      var r=db.ref("presses").push();k=r.key;
-      addPoint(k,Date.now()+serverOff);
-      var write=ensureAuth().then(function(){return r.set({by:deviceId(),t:TS})}).then(function(){return true});
+      var write=ensureAuth().then(function(){return db.ref("pressCounts/"+dk+"/"+pad3(b)).set(firebase.database.ServerValue.increment(1))}).then(function(){return true});
       var slow=new Promise(function(res){setTimeout(function(){res(true)},8000)});
-      return Promise.race([write,slow]).then(function(){notify();cleanup();return true}).catch(function(e){
-        dbg("押した記録の書き込み",e);delete pts[k];return false;
+      return Promise.race([write,slow]).then(function(){settle(true);notify();return true}).catch(function(e){
+        dbg("押した記録の書き込み",e);settle(false);return false;
       });
-    }catch(e){dbg("押した記録の書き込み",e);if(k)delete pts[k];return Promise.resolve(false)}
+    }catch(e){dbg("押した記録の書き込み",e);settle(false);return Promise.resolve(false)}
   }
   function clearNotes(){
     if(!notifyOn)return;
@@ -753,13 +755,19 @@ body{
 
   // ===== 白いボタンを押している間だけ出る、24時間グラフ =====
   // 横軸＝過去24時間（右端が現在）。赤ボタンが押された時刻に点を打つ。縦位置はランダムだが、できるだけ重ならないよう選ぶ。
-  var serverOff=0,chartEl=document.getElementById("chart"),chartOn=false,pts={},loadingN=0; // loadingN: グラフ用のデータを読み込み中の数（0より大きい間は LOADING… を出す）
+  var serverOff=0,chartEl=document.getElementById("chart"),chartOn=false,loadingN=0,counts={},unacked={},countsDay="",BUCKET=300000,MAXDOTS=30; // counts: 今日の5分ごとの押された回数 {区間番号:回数} / unacked: 書き込みの返事待ちの自分の分 // loadingN: グラフ用のデータを読み込み中の数（0より大きい間は LOADING… を出す）
   if(db){try{db.ref(".info/serverTimeOffset").on("value",function(sn){serverOff=sn.val()||0})}catch(e){}}
-  function addPoint(k,t){pts[k]=t}
+  function pad3(n){return("00"+n).slice(-3)}
+  function jstDayStart(now){return Math.floor((now+32400000)/86400000)*86400000-32400000} // 日本時間のその日の0時（ミリ秒）
+  // 今日の分（5分ごとの押された回数）だけを読む。1日あたり最大288件の小さな数字なので軽い。
   function loadPresses(){
     if(!db)return Promise.resolve();
-    return ensureAuth().then(function(){return db.ref("presses").limitToLast(500).once("value")}).then(function(sn){
-      sn.forEach(function(c){var v=c.val();if(v&&typeof v.t==="number")pts[c.key]=v.t});
+    var dk=themeKey(0);
+    return ensureAuth().then(function(){return db.ref("pressCounts/"+dk).once("value")}).then(function(sn){
+      var c={};
+      sn.forEach(function(ch){var v=ch.val(),b=parseInt(ch.key,10);if(typeof v==="number"&&v>0&&b>=0&&b<288)c[b]=v});
+      if(countsDay!==dk)unacked={};
+      counts=c;countsDay=dk;
     }).catch(function(e){dbg("押した記録の読み込み",e)});
   }
   function seeded(seed){var a=seed>>>0;return function(){a=(a+0x6D2B79F5)>>>0;var t=a;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296}}
@@ -768,7 +776,15 @@ body{
     var W=320,H=84,L=10,R=10,T=10,B=17,pw=W-L-R,ph=H-T-B,DAY=86400000,JST=9*3600000;
     // 範囲は「その日の0時〜翌0時」（日本時間 JST。端末のタイムゾーンには左右されない）。日付が変わると、グラフは空に戻る。
     var now=Date.now()+serverOff,t0=Math.floor((now+JST)/DAY)*DAY-JST,t1=t0+DAY,SPAN=DAY,list=[];
-    Object.keys(pts).forEach(function(k){var t=pts[k];if(t>=t0&&t<t1&&t<=now+60000)list.push({k:k,t:t})});
+    if(countsDay===themeKey(0)){ // 5分ごとの回数 → 点（1回につき1個。1つの区間に出す点は最大 MAXDOTS 個）
+      var bs={};
+      Object.keys(counts).forEach(function(b){bs[b]=counts[b]});
+      Object.keys(unacked).forEach(function(b){if(unacked[b]>0)bs[b]=(bs[b]||0)+unacked[b]});
+      Object.keys(bs).forEach(function(b){
+        var t=Math.min(t0+(+b+.5)*BUCKET,now),n=Math.min(bs[b],MAXDOTS);
+        if(t>=t0&&t<t1)for(var i=0;i<n;i++)list.push({k:b+"_"+i,t:t});
+      });
+    }
     list.sort(function(a,b){return a.t-b.t});
     var svg='<svg viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">'
       +'<defs><radialGradient id="dg"><stop offset="0" stop-color="#f4fff7"/><stop offset=".22" stop-color="#7dffa6"/><stop offset=".55" stop-color="#2ee06a"/><stop offset="1" stop-color="#2ee06a" stop-opacity="0"/></radialGradient>'
@@ -782,11 +798,12 @@ body{
     // 今の時刻を表す細い縦線（点より下に描く）
     var nx=L+Math.min(1,Math.max(0,(now-t0)/SPAN))*pw;
     svg+='<line class="now" x1="'+nx.toFixed(1)+'" x2="'+nx.toFixed(1)+'" y1="'+T+'" y2="'+(T+ph)+'"/>';
-    // 点：各点ごとに乱数（キー由来なので毎回同じ位置）で候補を出し、すでにある点から一番離れた位置を選ぶ
+    // 点：最初の1個（その日いちばん早い点）は縦の真ん中。2個目以降は、各点ごとに乱数（キー由来なので毎回同じ位置）で候補を出し、
+    //     すでにある点から一番離れた位置を選ぶ（なるべく重ならないように）
     var placed=[],yMin=T+4,yMax=T+ph-4,dots='';
     list.forEach(function(p){
-      var x=L+(p.t-t0)/SPAN*pw,rnd=seeded(hashKey(p.k)),best=yMin+rnd()*(yMax-yMin),bestScore=-1;
-      for(var c=0;c<16;c++){
+      var x=L+(p.t-t0)/SPAN*pw,rnd=seeded(hashKey(p.k)),best=placed.length?yMin+rnd()*(yMax-yMin):(yMin+yMax)/2,bestScore=-1;
+      for(var c=0;placed.length&&c<16;c++){
         var y=yMin+rnd()*(yMax-yMin),score=1e9;
         for(var i=placed.length-1;i>=0;i--){
           var q=placed[i],dx=x-q.x;if(dx>30)break;
@@ -808,7 +825,7 @@ body{
   function lightOff(m){if(screenMode===m){screenMode="";chartEl.classList.remove("on")}}
   function showChart(){
     chartOn=true;loadingN++;renderChart();lightOn("chart");
-    loadPresses().then(function(){loadingN--;if(chartOn&&screenMode==="chart")renderChart();cleanup()});
+    loadPresses().then(function(){loadingN--;if(chartOn&&screenMode==="chart")renderChart()});
   }
   function hideChart(){chartOn=false;lightOff("chart")}
 
@@ -907,26 +924,6 @@ body{
   }
   function hideTheme(){themeOn=false;lightOff("theme")}
 
-  // 24時間より古い記録は消す。サーバーの定期処理は無いので、アプリを使ったとき（ボタンを押す／グラフを開く）に、
-  // 古い順に取り出して消す。10分に1回までにして、通信を増やしすぎない。
-  var lastClean=0;
-  function cleanup(){
-    if(!db)return;
-    var nowL=Date.now();if(nowL-lastClean<600000)return;lastClean=nowL;
-    var cutoff=nowL+serverOff-86400000;
-    Object.keys(pts).forEach(function(k){if(pts[k]<cutoff)delete pts[k]});
-    ensureAuth().then(function(){
-      function step(n){
-        return db.ref("presses").limitToFirst(200).once("value").then(function(sn){
-          var up={},c=0;
-          sn.forEach(function(ch){var v=ch.val();if(!v||typeof v.t!=="number"||v.t<cutoff){up[ch.key]=null;c++}});
-          if(!c)return;
-          return db.ref("presses").update(up).then(function(){if(c>=200&&n<10)return step(n+1)});
-        });
-      }
-      return step(0);
-    }).catch(function(e){dbg("古い記録の削除",e)});
-  }
   renderChart(); // 消灯したガラスの画面を、最初から机に置いておく
   document.addEventListener("visibilitychange",function(){if(!document.hidden)clearNotes()});
 })();
