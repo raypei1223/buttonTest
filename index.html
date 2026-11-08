@@ -507,9 +507,10 @@ body{
 
   // 緑のLED：押すたびに右から1個ずつ消える
   var LED_COUNT=1,left=LED_COUNT,ledBox=document.getElementById("leds"),leds=[];
-  // 1日に押せるのは LED_COUNT 回まで。日付が変わると（端末の日付で）回復する。
+  // 1日に押せるのは LED_COUNT 回まで。日付が変わると（日本時間 JST の0時に）回復する。端末のタイムゾーンには左右されない。
   var PRESS_KEY="button_press_day";
-  function today(){var d=new Date();return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate()}
+  // 日本時間の日付 "YYYY-M-D"。serverOff（サーバー時刻とのずれ）は後で宣言される変数なので、まだ無いときは0として扱う。
+  function today(){var d=new Date(Date.now()+(typeof serverOff==="number"?serverOff:0)+9*3600000);return d.getUTCFullYear()+"-"+(d.getUTCMonth()+1)+"-"+d.getUTCDate()}
   function usedToday(){try{var o=JSON.parse(localStorage.getItem(PRESS_KEY)||"null");return(o&&o.d===today())?Math.max(0,Math.min(LED_COUNT,o.n|0)):0}catch(e){return 0}}
   function saveUsed(n){try{localStorage.setItem(PRESS_KEY,JSON.stringify({d:today(),n:n}))}catch(e){}}
   left=LED_COUNT-usedToday();
@@ -764,19 +765,18 @@ body{
   function seeded(seed){var a=seed>>>0;return function(){a=(a+0x6D2B79F5)>>>0;var t=a;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296}}
   function hashKey(k){var h=5381;for(var i=0;i<k.length;i++)h=((h<<5)+h+k.charCodeAt(i))|0;return h}
   function renderChart(){
-    var W=320,H=84,L=10,R=10,T=10,B=17,pw=W-L-R,ph=H-T-B,DAY=86400000;
-    // 範囲は「その日の0時〜翌0時」（端末の時計）。日付が変わると、グラフは空に戻る。
-    var now=Date.now()+serverOff,day0=new Date(now);day0.setHours(0,0,0,0);
-    var t0=day0.getTime(),t1=new Date(day0.getFullYear(),day0.getMonth(),day0.getDate()+1).getTime(),SPAN=t1-t0,list=[];
+    var W=320,H=84,L=10,R=10,T=10,B=17,pw=W-L-R,ph=H-T-B,DAY=86400000,JST=9*3600000;
+    // 範囲は「その日の0時〜翌0時」（日本時間 JST。端末のタイムゾーンには左右されない）。日付が変わると、グラフは空に戻る。
+    var now=Date.now()+serverOff,t0=Math.floor((now+JST)/DAY)*DAY-JST,t1=t0+DAY,SPAN=DAY,list=[];
     Object.keys(pts).forEach(function(k){var t=pts[k];if(t>=t0&&t<t1&&t<=now+60000)list.push({k:k,t:t})});
     list.sort(function(a,b){return a.t-b.t});
     var svg='<svg viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">'
       +'<defs><radialGradient id="dg"><stop offset="0" stop-color="#f4fff7"/><stop offset=".22" stop-color="#7dffa6"/><stop offset=".55" stop-color="#2ee06a"/><stop offset="1" stop-color="#2ee06a" stop-opacity="0"/></radialGradient>'
       +'<pattern id="sl" width="4" height="3" patternUnits="userSpaceOnUse"><rect width="4" height="1" y="2" fill="#000" opacity=".22"/></pattern></defs>'
       +'<g class="c"><line class="l" x1="'+L+'" x2="'+(W-R)+'" y1="'+(T+ph)+'" y2="'+(T+ph)+'"/>';
-    // 6時間ごとの目盛り（0・6・12・18・24 時）
+    // 6時間ごとの目盛り（日本時間の 0・6・12・18・24 時）
     for(var h=0;h<=24;h+=6){
-      var ts=new Date(day0.getFullYear(),day0.getMonth(),day0.getDate(),h).getTime(),x=L+(ts-t0)/SPAN*pw;
+      var ts=t0+h*3600000,x=L+(ts-t0)/SPAN*pw;
       svg+='<line class="l" x1="'+x.toFixed(1)+'" x2="'+x.toFixed(1)+'" y1="'+T+'" y2="'+(T+ph)+'"/><text class="t" text-anchor="middle" x="'+x.toFixed(1)+'" y="'+(H-5)+'">'+h+'</text>';
     }
     // 今の時刻を表す細い縦線（点より下に描く）
