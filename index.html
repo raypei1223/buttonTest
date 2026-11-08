@@ -249,12 +249,35 @@ body{
 .bell::before{content:"";position:absolute;inset:0;border-radius:inherit;background:repeating-linear-gradient(115deg,rgba(255,255,255,.0) 0 5px,rgba(255,255,255,.18) 5px 6px);pointer-events:none}
 .bell::after{content:"";position:absolute;right:0;bottom:0;width:7%;height:7%;border-radius:0 0 22% 0;background:linear-gradient(135deg,rgba(0,0,0,0) 50%,rgba(110,95,60,.28) 50%,rgba(250,246,234,.95) 100%);box-shadow:-1px -1px 2px rgba(40,42,38,.15);pointer-events:none}
 .bell.on{filter:none}
+.stage{position:relative}
+/* 机に埋め込まれた小さな画面。普段は消灯したガラス、白いボタンを押している間だけ点灯して24時間グラフを映す */
+.chart{position:absolute;left:50%;bottom:100%;transform:translateX(-50%);width:var(--s);margin-bottom:calc(var(--s)*.07);
+  padding:calc(var(--s)*.014);border-radius:calc(var(--s)*.03);
+  background:linear-gradient(var(--sq-groove),var(--sq-well));
+  box-shadow:0 1px 0 var(--sq-edge),0 0 0 0 rgba(46,224,106,0);
+  transition:box-shadow .45s ease-out;pointer-events:none}
+.chart.on{box-shadow:0 1px 0 var(--sq-edge),0 0 calc(var(--s)*.05) calc(var(--s)*.004) rgba(46,224,106,.28);transition-duration:.08s}
+.chart svg{display:block;width:100%;height:auto;border-radius:calc(var(--s)*.02);background:linear-gradient(180deg,#1c2620,#0c120e)}
+.chart::before{ /* 点灯したときの画面のにじむ発光 */
+  content:"";position:absolute;inset:calc(var(--s)*.014);border-radius:calc(var(--s)*.02);z-index:1;pointer-events:none;
+  background:radial-gradient(ellipse at 50% 55%,rgba(46,224,106,.32),rgba(46,224,106,.07) 70%);
+  opacity:0;transition:opacity .45s ease-out}
+.chart.on::before{opacity:1;transition-duration:.1s}
+.chart::after{ /* ガラスの斜めの映り込みと、穴の縁が落とす影 */
+  content:"";position:absolute;inset:0;border-radius:inherit;z-index:2;pointer-events:none;
+  background:linear-gradient(115deg,rgba(255,255,255,.17) 0,rgba(255,255,255,.04) 36%,rgba(255,255,255,0) 37%);
+  box-shadow:inset 0 0 calc(var(--s)*.016) rgba(0,0,0,.6),inset 0 calc(var(--s)*.008) calc(var(--s)*.012) rgba(0,0,0,.3),inset 0 0 0 1px var(--sq-groove)}
+.chart .c{opacity:0;transition:opacity .5s ease-out}
+.chart.on .c{opacity:1;transition-duration:.1s}
+.chart .t{fill:#5fe48a;font:600 8px ui-monospace,Menlo,Consolas,monospace;opacity:.6}
+.chart .l{stroke:rgba(94,228,138,.17);stroke-width:.6}
 .note{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 58px);transform:translateX(-50%);max-width:min(88vw,360px);padding:8px 14px;border-radius:10px;background:rgba(30,30,30,.82);color:#fff;font:13px/1.5 system-ui,sans-serif;text-align:center;opacity:0;pointer-events:none;transition:opacity .25s;z-index:6}
 .note.on{opacity:1}
 </style>
 </head>
 <body>
 <div class="stage">
+<div class="chart" id="chart" aria-hidden="true"></div>
 <div class="leds" id="leds" role="img"></div>
 <div class="plate"><div class="well">
   <button class="btn" id="btn" type="button" aria-label="ボタン"><span class="cap"></span></button>
@@ -497,7 +520,7 @@ body{
   var btn=document.getElementById("btn"),pressed=false;
   function holdDown(el){el._t0=performance.now();clearTimeout(el._ut);el.classList.add("down")}
   function holdUp(el){var w=90-(performance.now()-el._t0);if(w>0){el._ut=setTimeout(function(){el.classList.remove("down")},w)}else{el.classList.remove("down")}}
-  function press(){if(pressed)return;refreshDay();if(left<=0){say("今日はもう押せません（1日"+LED_COUNT+"回まで）");return}pressed=true;holdDown(btn);dropLed();click(true);buzz(14);announce()}
+  function press(){if(pressed)return;refreshDay();if(left<=0){say("今日はもう押せません");return}pressed=true;holdDown(btn);dropLed();click(true);buzz(14);announce()}
   function release(){if(!pressed)return;pressed=false;holdUp(btn);click(false);buzz(6)}
 
   btn.addEventListener("pointerdown",function(e){
@@ -513,8 +536,8 @@ body{
     if(e.key===" "||e.key==="Enter"){e.preventDefault();release()}
   });
   var sq=document.getElementById("sq"),sqPressed=false;
-  function sqPress(){if(sqPressed)return;sqPressed=true;holdDown(sq);clickSq(true);humStart();buzz(10)}
-  function sqRelease(){if(!sqPressed)return;sqPressed=false;holdUp(sq);humStop();clickSq(false);buzz(5)}
+  function sqPress(){if(sqPressed)return;sqPressed=true;holdDown(sq);clickSq(true);humStart();buzz(10);showChart()}
+  function sqRelease(){if(!sqPressed)return;sqPressed=false;holdUp(sq);humStop();clickSq(false);buzz(5);hideChart()}
   sq.addEventListener("pointerdown",function(e){
     if(e.pointerType==="mouse"&&e.button!==0)return;
     try{sq.setPointerCapture(e.pointerId)}catch(_){}
@@ -529,8 +552,8 @@ body{
   });
   sq.addEventListener("contextmenu",function(e){e.preventDefault()});
   var rb=document.getElementById("rb"),rbPressed=false;
-  function rbPress(){if(rbPressed)return;rbPressed=true;holdDown(rb);clickRb(true);buzz(12)}
-  function rbRelease(){if(!rbPressed)return;rbPressed=false;holdUp(rb);clickRb(false);buzz(5)}
+  function rbPress(){if(rbPressed)return;rbPressed=true;holdDown(rb);clickRb(true);buzz(12);showTheme()}
+  function rbRelease(){if(!rbPressed)return;rbPressed=false;holdUp(rb);clickRb(false);buzz(5);hideTheme()}
   rb.addEventListener("pointerdown",function(e){
     if(e.pointerType==="mouse"&&e.button!==0)return;
     try{rb.setPointerCapture(e.pointerId)}catch(_){}
@@ -572,7 +595,7 @@ body{
   // ===== 通信（Firebase）と通知 =====
   // 赤いボタン(#btn)を押すたびに、このアプリを使っているほかの人へ通知する。
   //  ・アプリを閉じている人 … Web Push（たんご帳と同じ Cloudflare Worker 経由）
-  //  ・アプリを開いている人 … Firebase Realtime Database の lastPress を見て知らせる
+  //  ・通知は Web Push のみ。Firebase は赤ボタンを押した記録（白ボタンのグラフ用）に使う
   var firebaseConfig={
     apiKey:"AIzaSyDlvbWSmTbHk6ObYZqCpXP9S0XnpmAvJJA",
     authDomain:"button-88c55.firebaseapp.com",
@@ -676,32 +699,162 @@ body{
   }
 
   // 赤いボタンを押したとき（press() から呼ぶ）。失敗してもボタン自体の動きには影響しない。
+  //  ・通知 … Web Push（Cloudflare Worker）
+  //  ・記録 … Firebase の presses に時刻だけ残す（白ボタンのグラフ用）
   function announce(){
-    ensureAuth().then(function(){return db.ref("lastPress").set({by:deviceId(),t:TS})}).catch(function(){});
+    try{
+      if(db){
+        var r=db.ref("presses").push();
+        addPoint(r.key,Date.now()+serverOff);
+        ensureAuth().then(function(){return r.set({by:deviceId(),t:TS})}).then(cleanup).catch(function(){});
+      }
+    }catch(e){}
     try{pushPost("/notify",{topic:TOPIC,deviceId:deviceId(),sender:"ボタン",preview:PRESS_TEXT}).catch(function(){})}catch(e){}
-  }
-
-  // アプリを開いている（が画面は見ていない）ときに、ほかの人が押したら通知を出す
-  function showPressed(){
-    getReg().then(function(reg){return reg.showNotification("ボタン",{body:PRESS_TEXT,tag:"button",renotify:true,icon:"button-icon-192.png"})}).catch(function(){});
   }
   function clearNotes(){
     if(!notifyOn)return;
     getReg().then(function(reg){return reg.getNotifications({tag:"button"})}).then(function(l){l.forEach(function(n){n.close()})}).catch(function(){});
   }
-  if(db){
-    var serverOff=0,firstValue=true;
-    db.ref(".info/serverTimeOffset").on("value",function(sn){serverOff=sn.val()||0});
-    ensureAuth().then(function(){
-      db.ref("lastPress").on("value",function(sn){
-        if(firstValue){firstValue=false;return}          // 開いた直後の過去の値は無視
-        var v=sn.val();
-        if(!v||v.by===deviceId())return;                 // 自分が押した分は通知しない
-        if(Date.now()+serverOff-(v.t||0)>10000)return;   // 古い値（再接続時など）は無視
-        if(document.hidden&&notifyOn)showPressed();
-      });
+
+  // ===== 白いボタンを押している間だけ出る、24時間グラフ =====
+  // 横軸＝過去24時間（右端が現在）。赤ボタンが押された時刻に点を打つ。縦位置はランダムだが、できるだけ重ならないよう選ぶ。
+  var serverOff=0,chartEl=document.getElementById("chart"),chartOn=false,pts={};
+  if(db){try{db.ref(".info/serverTimeOffset").on("value",function(sn){serverOff=sn.val()||0})}catch(e){}}
+  function addPoint(k,t){pts[k]=t}
+  function loadPresses(){
+    if(!db)return Promise.resolve();
+    return ensureAuth().then(function(){return db.ref("presses").limitToLast(500).once("value")}).then(function(sn){
+      sn.forEach(function(c){var v=c.val();if(v&&typeof v.t==="number")pts[c.key]=v.t});
     }).catch(function(){});
   }
+  function seeded(seed){var a=seed>>>0;return function(){a=(a+0x6D2B79F5)>>>0;var t=a;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296}}
+  function hashKey(k){var h=5381;for(var i=0;i<k.length;i++)h=((h<<5)+h+k.charCodeAt(i))|0;return h}
+  function renderChart(){
+    var W=320,H=84,L=10,R=10,T=10,B=17,pw=W-L-R,ph=H-T-B,DAY=86400000;
+    var now=Date.now()+serverOff,t0=now-DAY,list=[];
+    Object.keys(pts).forEach(function(k){var t=pts[k];if(t>=t0&&t<=now+60000)list.push({k:k,t:t})});
+    list.sort(function(a,b){return a.t-b.t});
+    var svg='<svg viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">'
+      +'<defs><radialGradient id="dg"><stop offset="0" stop-color="#f4fff7"/><stop offset=".22" stop-color="#7dffa6"/><stop offset=".55" stop-color="#2ee06a"/><stop offset="1" stop-color="#2ee06a" stop-opacity="0"/></radialGradient>'
+      +'<pattern id="sl" width="4" height="3" patternUnits="userSpaceOnUse"><rect width="4" height="1" y="2" fill="#000" opacity=".22"/></pattern></defs>'
+      +'<g class="c"><line class="l" x1="'+L+'" x2="'+(W-R)+'" y1="'+(T+ph)+'" y2="'+(T+ph)+'"/>';
+    // 6時間ごとの目盛り（端末の時計の 0・6・12・18 時）
+    var d=new Date(t0);d.setMinutes(0,0,0);d.setHours(d.getHours()+1);
+    for(var ts=d.getTime();ts<=now;ts+=3600000){
+      var hh=new Date(ts).getHours();if(hh%6)continue;
+      var x=L+(ts-t0)/DAY*pw;
+      svg+='<line class="l" x1="'+x.toFixed(1)+'" x2="'+x.toFixed(1)+'" y1="'+T+'" y2="'+(T+ph)+'"/><text class="t" text-anchor="middle" x="'+x.toFixed(1)+'" y="'+(H-5)+'">'+hh+'</text>';
+    }
+    // 点：各点ごとに乱数（キー由来なので毎回同じ位置）で候補を出し、すでにある点から一番離れた位置を選ぶ
+    var placed=[],yMin=T+4,yMax=T+ph-4,dots='';
+    list.forEach(function(p){
+      var x=L+(p.t-t0)/DAY*pw,rnd=seeded(hashKey(p.k)),best=yMin+rnd()*(yMax-yMin),bestScore=-1;
+      for(var c=0;c<16;c++){
+        var y=yMin+rnd()*(yMax-yMin),score=1e9;
+        for(var i=placed.length-1;i>=0;i--){
+          var q=placed[i],dx=x-q.x;if(dx>30)break;
+          var dd=Math.sqrt(dx*dx+(y-q.y)*(y-q.y));if(dd<score)score=dd;
+        }
+        if(score>bestScore){bestScore=score;best=y}
+      }
+      placed.push({x:x,y:best});
+      dots+='<circle cx="'+x.toFixed(1)+'" cy="'+best.toFixed(1)+'" r="4.2" fill="url(#dg)"/>';
+    });
+    svg+=dots;
+    if(!list.length)svg+='<text class="t" text-anchor="middle" x="'+(W/2)+'" y="'+(T+ph/2+3)+'">NO DATA</text>';
+    chartEl.innerHTML=svg+'</g><rect width="'+W+'" height="'+H+'" fill="url(#sl)"/></svg>';
+  }
+  // 画面を点灯しているのが、グラフ(白ボタン)かテーマ(古びたボタン)か。消すときは自分が点けた分だけ消す。
+  var screenMode="";
+  function lightOn(m){screenMode=m;chartEl.classList.add("on")}
+  function lightOff(m){if(screenMode===m){screenMode="";chartEl.classList.remove("on")}}
+  function showChart(){
+    chartOn=true;renderChart();lightOn("chart");
+    loadPresses().then(function(){if(chartOn&&screenMode==="chart")renderChart();cleanup()});
+  }
+  function hideChart(){chartOn=false;lightOff("chart")}
+
+  // ===== 古びたボタンを押している間、その日の「テーマ」を画面に映す =====
+  // Firebase の themes に「テーマの一覧」を入れておく（文字列を1件ずつ。配列でも push キーでもよい）。
+  // その日のテーマは、日付から決まる疑似乱数で一覧から1つ選ぶ。同じ日・同じ一覧なら全員が同じテーマになる。
+  // 日付の区切りは日本時間(JST)の0時で固定。一覧が空・未登録・通信できないときは「無条件」。
+  var DEFAULT_THEME="無条件",themeList=null,themeOn=false;
+  function themeKey(addDays){
+    var d=new Date(Date.now()+serverOff+9*3600000+(addDays||0)*86400000);
+    function z(n){return(n<10?"0":"")+n}
+    return d.getUTCFullYear()+"-"+z(d.getUTCMonth()+1)+"-"+z(d.getUTCDate());
+  }
+  function fetchThemeList(){
+    var def={list:[],ok:false};
+    if(!db)return Promise.resolve(def);
+    var q=ensureAuth().then(function(){return db.ref("themes").once("value")}).then(function(sn){
+      var list=[];
+      sn.forEach(function(c){var v=c.val();if(typeof v==="string"&&v.trim())list.push(v.trim())}); // キー順＝全端末で同じ並び
+      return{list:list,ok:true};
+    }).catch(function(){return def});
+    var to=new Promise(function(res){setTimeout(function(){res(def)},2500)}); // 圏外で待ち続けないように
+    return Promise.race([q,to]);
+  }
+  // 日付 → 一覧の番号。昨日と同じテーマが続かないよう、被ったら1つずらす（一覧が2件以上のとき）。
+  function pickTheme(list){
+    var n=list.length;if(!n)return DEFAULT_THEME;
+    function idx(k){return Math.floor(seeded(hashKey(k))()*n)}
+    var i=idx(themeKey(0));
+    if(n>1&&i===idx(themeKey(-1)))i=(i+1)%n;
+    return list[i];
+  }
+  function escSvg(t){return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+  function renderTheme(text,key){
+    var W=320,H=84,maxW=W-32,body;
+    if(text===null){
+      body='<text class="t" text-anchor="middle" x="'+(W/2)+'" y="'+(H/2+3)+'">...</text>';
+    }else{
+      var units=0;for(var i=0;i<text.length;i++)units+=text.charCodeAt(i)>255?1:.55;
+      var size=Math.min(30,Math.max(12,maxW/Math.max(units,1))),fit=units*size>maxW?' textLength="'+maxW+'" lengthAdjust="spacingAndGlyphs"':'';
+      var tx='<text text-anchor="middle" x="'+(W/2)+'" y="'+(H/2+size*.36+2)+'" font-size="'+size.toFixed(1)+'" font-weight="700" font-family="system-ui,\'Hiragino Sans\',\'Yu Gothic\',\'Noto Sans JP\',sans-serif"'+fit+'>'+escSvg(text)+'</text>';
+      body=tx.replace('<text ','<text fill="#2ee06a" filter="url(#tg)" ')+tx.replace('<text ','<text fill="#c8ffd8" ')
+        +'<text class="t" x="12" y="14">THEME</text><text class="t" text-anchor="end" x="'+(W-12)+'" y="14">'+escSvg(key.slice(5).replace("-","/"))+'</text>';
+    }
+    chartEl.innerHTML='<svg viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">'
+      +'<defs><filter id="tg" x="-20%" y="-60%" width="140%" height="220%"><feGaussianBlur stdDeviation="3.2"/></filter>'
+      +'<pattern id="sl" width="4" height="3" patternUnits="userSpaceOnUse"><rect width="4" height="1" y="2" fill="#000" opacity=".22"/></pattern></defs>'
+      +'<g class="c">'+body+'</g><rect width="'+W+'" height="'+H+'" fill="url(#sl)"/></svg>';
+  }
+  function showTheme(){
+    themeOn=true;var key=themeKey(0);
+    if(themeList!==null)renderTheme(pickTheme(themeList),key);
+    else{
+      renderTheme(null,key);
+      fetchThemeList().then(function(r){
+        if(r.ok)themeList=r.list;
+        if(themeOn&&screenMode==="theme")renderTheme(pickTheme(r.list),themeKey(0));
+      });
+    }
+    lightOn("theme");
+  }
+  function hideTheme(){themeOn=false;lightOff("theme")}
+
+  // 24時間より古い記録は消す。サーバーの定期処理は無いので、アプリを使ったとき（ボタンを押す／グラフを開く）に、
+  // 古い順に取り出して消す。10分に1回までにして、通信を増やしすぎない。
+  var lastClean=0;
+  function cleanup(){
+    if(!db)return;
+    var nowL=Date.now();if(nowL-lastClean<600000)return;lastClean=nowL;
+    var cutoff=nowL+serverOff-86400000;
+    Object.keys(pts).forEach(function(k){if(pts[k]<cutoff)delete pts[k]});
+    ensureAuth().then(function(){
+      function step(n){
+        return db.ref("presses").limitToFirst(200).once("value").then(function(sn){
+          var up={},c=0;
+          sn.forEach(function(ch){var v=ch.val();if(!v||typeof v.t!=="number"||v.t<cutoff){up[ch.key]=null;c++}});
+          if(!c)return;
+          return db.ref("presses").update(up).then(function(){if(c>=200&&n<10)return step(n+1)});
+        });
+      }
+      return step(0);
+    }).catch(function(){});
+  }
+  renderChart(); // 消灯したガラスの画面を、最初から机に置いておく
   document.addEventListener("visibilitychange",function(){if(!document.hidden)clearNotes()});
 })();
 /* 音データ（丸ボタン: down/up、四角ボタン: sqdown/squp、古びた出っ張りボタン: rbdown/rbup、ゴムのボタン: gmdown/gmup。WAV モノラル、base64） */
