@@ -527,21 +527,31 @@ body{
   var btn=document.getElementById("btn"),pressed=false;
   function holdDown(el){el._t0=performance.now();clearTimeout(el._ut);el.classList.add("down")}
   function holdUp(el){var w=90-(performance.now()-el._t0);if(w>0){el._ut=setTimeout(function(){el.classList.remove("down")},w)}else{el.classList.remove("down")}}
-  function press(){if(pressed)return;refreshDay();if(left<=0){say("今日はもう押せません",true);return}pressed=true;holdDown(btn);var day=today();dropLed();click(true);buzz(14);
-    announce().then(function(ok){if(!ok){giveBackLed(day);say("記録できませんでした。もう一度押せます",true)}})}
-  function release(){if(!pressed)return;pressed=false;holdUp(btn);click(false);buzz(6)}
+  // 押し込んだ瞬間：ボタンが沈み、クリック音と振動が出る。LED・点・通知は、まだ変わらない。
+  function press(){if(pressed)return;refreshDay();if(left<=0){say("今日はもう押せません",true);return}pressed=true;holdDown(btn);click(true);buzz(14)}
+  // 離した瞬間（done=true）：LEDが1つ消え、点を記録して、ほかの人へ通知する。記録に失敗したらLEDを戻す。
+  // 押している途中で中断されたとき（done=false：pointercancel など）は、何も起こさない（LEDも消えない）。
+  function release(done){
+    if(!pressed)return;pressed=false;holdUp(btn);click(false);buzz(6);
+    if(!done)return;
+    refreshDay(); // 押している間に別の画面で押された・日付が変わった、に備えて数え直す
+    if(left<=0){say("今日はもう押せません",true);return}
+    var day=today();dropLed();
+    announce().then(function(ok){if(!ok){giveBackLed(day);say("記録できませんでした。もう一度押せます",true)}});
+  }
 
   btn.addEventListener("pointerdown",function(e){
     if(e.pointerType==="mouse"&&e.button!==0)return;
     try{btn.setPointerCapture(e.pointerId)}catch(_){}
     press();
   });
-  ["pointerup","pointercancel","lostpointercapture"].forEach(function(n){btn.addEventListener(n,release)});
+  btn.addEventListener("pointerup",function(){release(true)});
+  ["pointercancel","lostpointercapture"].forEach(function(n){btn.addEventListener(n,function(){release(false)})});
   btn.addEventListener("keydown",function(e){
     if((e.key===" "||e.key==="Enter")&&!e.repeat){e.preventDefault();press()}
   });
   btn.addEventListener("keyup",function(e){
-    if(e.key===" "||e.key==="Enter"){e.preventDefault();release()}
+    if(e.key===" "||e.key==="Enter"){e.preventDefault();release(true)}
   });
   var sq=document.getElementById("sq"),sqPressed=false;
   function sqPress(){if(sqPressed)return;sqPressed=true;holdDown(sq);clickSq(true);humStart();buzz(10);showChart()}
