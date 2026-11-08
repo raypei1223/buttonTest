@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>ボタン</title>
+<link rel="manifest" href="button-manifest.json">
+<link rel="apple-touch-icon" href="button-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ボタン">
+<meta name="theme-color" content="#c8cac4">
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
 <style>
 :root{
   --bg:#c8cac4; --plate:#b4b7b0; --plate-edge:#9da099; --well:#6f726c;
@@ -230,6 +239,11 @@ body{
 .gm.down .gmdome::after{opacity:.15}
 .gm:focus-visible{outline:3px solid var(--cap-hi);outline-offset:4px}
 @media (prefers-reduced-motion:reduce){.btn::before,.cap,.lit,.glow,.rb::before,.rbcap,.gmdome,.gmdome::after,.gmdent,.gmfold,.sq,.sq::before,.sq::after,.sqface,.sqface::before,.sqface::after{transition:none}}
+.bell{position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);right:12px;width:40px;height:40px;padding:0;border:0;border-radius:50%;background:rgba(40,42,38,.22);color:#fff;font-size:18px;line-height:40px;text-align:center;opacity:.55;z-index:5;cursor:pointer}
+.bell.on{opacity:.95}
+.bell:focus-visible{outline:3px solid var(--cap-hi);outline-offset:3px}
+.note{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 58px);transform:translateX(-50%);max-width:min(88vw,360px);padding:8px 14px;border-radius:10px;background:rgba(30,30,30,.82);color:#fff;font:13px/1.5 system-ui,sans-serif;text-align:center;opacity:0;pointer-events:none;transition:opacity .25s;z-index:6}
+.note.on{opacity:1}
 </style>
 </head>
 <body>
@@ -244,6 +258,8 @@ body{
 <button class="gm" id="gm" type="button" aria-label="ゴムのボタン"><span class="gmdome"><span class="gmdent"></span><span class="gmfold"></span></span></button>
 </div>
 </div>
+<button class="bell" id="bell" type="button" aria-label="通知" aria-pressed="false">🔕</button>
+<div class="note" id="note" role="status" aria-live="polite"></div>
 <script>
 (function(){
   var ctx=null,noise=null;
@@ -451,7 +467,7 @@ body{
   var btn=document.getElementById("btn"),pressed=false;
   function holdDown(el){el._t0=performance.now();clearTimeout(el._ut);el.classList.add("down")}
   function holdUp(el){var w=90-(performance.now()-el._t0);if(w>0){el._ut=setTimeout(function(){el.classList.remove("down")},w)}else{el.classList.remove("down")}}
-  function press(){if(pressed)return;pressed=true;holdDown(btn);dropLed();click(true);buzz(14)}
+  function press(){if(pressed)return;pressed=true;holdDown(btn);dropLed();click(true);buzz(14);announce()}
   function release(){if(!pressed)return;pressed=false;holdUp(btn);click(false);buzz(6)}
 
   btn.addEventListener("pointerdown",function(e){
@@ -521,7 +537,138 @@ body{
   ["gesturestart","gesturechange","gestureend"].forEach(function(t){
     document.addEventListener(t,function(e){e.preventDefault()});
   });
-  document.addEventListener("touchstart",function(e){e.preventDefault()},{passive:false});
+  document.addEventListener("touchstart",function(e){if(e.target&&e.target.closest&&e.target.closest("#bell"))return;e.preventDefault()},{passive:false});
+
+  // ===== 通信（Firebase）と通知 =====
+  // 赤いボタン(#btn)を押すたびに、このアプリを使っているほかの人へ通知する。
+  //  ・アプリを閉じている人 … Web Push（たんご帳と同じ Cloudflare Worker 経由）
+  //  ・アプリを開いている人 … Firebase Realtime Database の lastPress を見て知らせる
+  var firebaseConfig={
+    apiKey:"AIzaSyDlvbWSmTbHk6ObYZqCpXP9S0XnpmAvJJA",
+    authDomain:"button-88c55.firebaseapp.com",
+    databaseURL:"https://button-88c55-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId:"button-88c55",
+    storageBucket:"button-88c55.firebasestorage.app",
+    messagingSenderId:"562223269299",
+    appId:"1:562223269299:web:3d0e7fde5bc69c60a077c6",
+    measurementId:"G-HHTKZVDG5Z"
+  };
+  var PUSH_API="https://tango-push.eisas12m08y.workers.dev";
+  var VAPID_PUBLIC_KEY="BH9EL0PjbYENYjVQn-NYIaHnQwkW1EPS9qhyK3rCNPWKHzIr3DLmUGbw7KpdYEWtG0ora_qxW09EkXZLP19T8js";
+  var TOPIC="button-all";                  // このアプリを使っている人みんなで1つの宛先
+  var DEVICE_ID_KEY="button_device_id",NOTIFY_OFF_KEY="button_notify_off";
+  var PRESS_TEXT="赤いボタンが押されました";
+
+  var db=null,auth=null,TS=null;
+  try{firebase.initializeApp(firebaseConfig);auth=firebase.auth();db=firebase.database();TS=firebase.database.ServerValue.TIMESTAMP}catch(e){}
+
+  function deviceId(){
+    try{
+      var id=localStorage.getItem(DEVICE_ID_KEY);
+      if(!id){id=(crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random().toString(36).slice(2));localStorage.setItem(DEVICE_ID_KEY,id)}
+      return id;
+    }catch(e){return "unknown-"+Math.random().toString(36).slice(2)}
+  }
+  function b64(s){
+    var pad="=".repeat((4-(s.length%4))%4),raw=atob((s+pad).replace(/-/g,"+").replace(/_/g,"/"));
+    return Uint8Array.from(raw,function(c){return c.charCodeAt(0)});
+  }
+  function pushPost(path,payload){
+    return fetch(PUSH_API+path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+  }
+  function pushOK(){return "serviceWorker" in navigator&&"PushManager" in window&&typeof Notification!=="undefined"}
+
+  // 匿名ログイン（読み書きにはログインが必要。ルール側で auth != null を確認する）
+  var authP=null;
+  function ensureAuth(){
+    if(!auth)return Promise.reject(new Error("no firebase"));
+    if(!authP){authP=new Promise(function(res,rej){
+      var un=auth.onAuthStateChanged(function(u){
+        if(u){un();res(u)}
+        else auth.signInAnonymously().catch(function(e){un();authP=null;rej(e)});
+      });
+    })}
+    return authP;
+  }
+
+  // Service Worker（button-sw.js）。ページの置き場所に関係なく、返ってきた registration を直接使う。
+  var regP=null;
+  function getReg(){
+    if(!regP){regP=navigator.serviceWorker.register("button-sw.js",{scope:"./"}).then(function(reg){
+      if(reg.active)return reg;
+      var w=reg.installing||reg.waiting;
+      if(!w)return reg;
+      return new Promise(function(res){w.addEventListener("statechange",function(){if(w.state==="activated")res(reg)})});
+    }).catch(function(e){regP=null;throw e})}
+    return regP;
+  }
+  // 端末のプッシュ購読を作って、サーバーにこの宛先(TOPIC)として登録する
+  function subscribe(){
+    return getReg().then(function(reg){
+      return reg.pushManager.getSubscription().then(function(sub){
+        return sub||reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64(VAPID_PUBLIC_KEY)});
+      });
+    }).then(function(sub){
+      return pushPost("/subscribe",{topic:TOPIC,deviceId:deviceId(),subscription:sub.toJSON()});
+    }).then(function(r){return r.ok});
+  }
+
+  // 通知スイッチ（ベル）
+  var bell=document.getElementById("bell"),note=document.getElementById("note"),noteT=0,notifyOn=false;
+  function say(t){note.textContent=t;note.classList.add("on");clearTimeout(noteT);noteT=setTimeout(function(){note.classList.remove("on")},3500)}
+  function setBell(on){bell.classList.toggle("on",on);bell.setAttribute("aria-pressed",on?"true":"false");bell.textContent=on?"🔔":"🔕"}
+  function notifyOff(){try{return localStorage.getItem(NOTIFY_OFF_KEY)==="1"}catch(e){return false}}
+  function setNotifyOff(v){try{if(v)localStorage.setItem(NOTIFY_OFF_KEY,"1");else localStorage.removeItem(NOTIFY_OFF_KEY)}catch(e){}}
+
+  bell.addEventListener("click",function(){
+    if(!pushOK()){say("この端末・ブラウザでは通知を使えません。iPhone は「ホーム画面に追加」してから開いてください。");return}
+    if(notifyOn){
+      notifyOn=false;setNotifyOff(true);setBell(false);
+      pushPost("/unsubscribe",{topic:TOPIC,deviceId:deviceId()}).catch(function(){});
+      say("通知をオフにしました");return;
+    }
+    Notification.requestPermission().then(function(p){
+      if(p!=="granted"){setBell(false);say("通知が許可されませんでした。ブラウザの設定から変更できます。");return}
+      return subscribe().then(function(ok){
+        notifyOn=true;setNotifyOff(false);setBell(true);
+        say(ok?"通知をオンにしました。アプリを閉じていても届きます。":"通知をオンにしました。このタブを開いたままにしてください。");
+      });
+    }).catch(function(){say("通知を設定できませんでした")});
+  });
+  setBell(false);
+  if(pushOK()&&Notification.permission==="granted"&&!notifyOff()){
+    notifyOn=true;setBell(true);
+    subscribe().catch(function(){});
+  }
+
+  // 赤いボタンを押したとき（press() から呼ぶ）。失敗してもボタン自体の動きには影響しない。
+  function announce(){
+    ensureAuth().then(function(){return db.ref("lastPress").set({by:deviceId(),t:TS})}).catch(function(){});
+    try{pushPost("/notify",{topic:TOPIC,deviceId:deviceId(),sender:"ボタン",preview:PRESS_TEXT}).catch(function(){})}catch(e){}
+  }
+
+  // アプリを開いている（が画面は見ていない）ときに、ほかの人が押したら通知を出す
+  function showPressed(){
+    getReg().then(function(reg){return reg.showNotification("ボタン",{body:PRESS_TEXT,tag:"button",renotify:true,icon:"button-icon-192.png"})}).catch(function(){});
+  }
+  function clearNotes(){
+    if(!notifyOn)return;
+    getReg().then(function(reg){return reg.getNotifications({tag:"button"})}).then(function(l){l.forEach(function(n){n.close()})}).catch(function(){});
+  }
+  if(db){
+    var serverOff=0,firstValue=true;
+    db.ref(".info/serverTimeOffset").on("value",function(sn){serverOff=sn.val()||0});
+    ensureAuth().then(function(){
+      db.ref("lastPress").on("value",function(sn){
+        if(firstValue){firstValue=false;return}          // 開いた直後の過去の値は無視
+        var v=sn.val();
+        if(!v||v.by===deviceId())return;                 // 自分が押した分は通知しない
+        if(Date.now()+serverOff-(v.t||0)>10000)return;   // 古い値（再接続時など）は無視
+        if(document.hidden&&notifyOn)showPressed();
+      });
+    }).catch(function(){});
+  }
+  document.addEventListener("visibilitychange",function(){if(!document.hidden)clearNotes()});
 })();
 /* 音データ（丸ボタン: down/up、四角ボタン: sqdown/squp、古びた出っ張りボタン: rbdown/rbup、ゴムのボタン: gmdown/gmup。WAV モノラル、base64） */
 window.__BTN_SND={
