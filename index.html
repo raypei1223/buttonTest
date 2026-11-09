@@ -815,13 +815,17 @@ body{
   themeIn.addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.isComposing){e.preventDefault();sendTheme()}});
 
   // --- 管理人への入口：特定の順番でボタンを押すとパスコード欄が出る（赤ボタンは使わない） ---
-  // 白→白→古びた→白→古びた（3秒以内に続けて押す）。この順番が知られても、パスコードが無ければ何もできない。
-  var SEQ="ssrsr",seqBuf="",seqT=0;
+  // 白→白→古びた→白→古びた→上の画面を3回タップ（それぞれ前の操作から3秒以内）。この順番が知られても、パスコードが無ければ何もできない。
+  var SEQ="ssrsrttt",seqBuf="",seqT=0;
   function seqPush(c){
     var t=Date.now();if(t-seqT>3000)seqBuf="";seqT=t;
     seqBuf=(seqBuf+c).slice(-SEQ.length);
     if(seqBuf===SEQ){seqBuf="";showGate()}
   }
+  document.getElementById("chart").addEventListener("pointerdown",function(e){
+    if(e.pointerType==="mouse"&&e.button!==0)return;
+    seqPush("t");
+  });
   function showGate(){
     openSettings();
     if(isAdmin)return;
