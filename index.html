@@ -290,6 +290,19 @@ body{
 .sw{all:unset;cursor:pointer;position:relative;width:48px;height:28px;border-radius:14px;background:#b4b7b0;transition:background .2s;-webkit-tap-highlight-color:transparent}
 .sw .knob{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.35);transition:transform .2s}
 .sw[aria-checked="true"]{background:#34a853}
+.spanel{max-height:min(80vh,560px);overflow-y:auto;touch-action:pan-y;overscroll-behavior:contain}
+.ssec{border-top:1px solid rgba(0,0,0,.1);padding:12px 0}
+.ssec[hidden]{display:none}
+.ssec h3{margin:0 0 8px;font-size:14px;font-weight:600}
+.srow2{display:flex;gap:8px;align-items:center}
+.settings input{flex:1;min-width:0;font:16px system-ui,sans-serif;padding:8px 10px;border:1px solid #b4b7b0;border-radius:8px;background:#fff;color:#26272b;-webkit-user-select:text;user-select:text;-webkit-appearance:none;appearance:none}
+.sbtn{all:unset;cursor:pointer;padding:8px 14px;border-radius:8px;background:#26272b;color:#fff;font-size:14px;text-align:center;white-space:nowrap;-webkit-tap-highlight-color:transparent}
+.sbtn:focus-visible{outline:3px solid #4b7bec;outline-offset:2px}
+.sbtn:disabled{opacity:.5;cursor:default}
+.sbtn.ok{background:#34a853}.sbtn.no{background:#b3261e}
+.sub{display:flex;align-items:center;gap:6px;padding:6px 0}
+.sub .stext{flex:1;min-width:0;word-break:break-all;font-size:14px}
+.subnone{font-size:13px;opacity:.6;padding:4px 0}
 .sw[aria-checked="true"] .knob{transform:translateX(20px)}
 </style>
 </head>
@@ -311,6 +324,19 @@ body{
   <div class="spanel" role="dialog" aria-modal="false" aria-labelledby="stitle">
     <div class="shead"><h2 id="stitle">設定</h2><button class="sclose" id="sclose" type="button" aria-label="閉じる">✕</button></div>
     <div class="srow"><span class="slabel" id="slabel">通知</span><button class="sw" id="notifySw" type="button" role="switch" aria-checked="false" aria-labelledby="slabel"><span class="knob"></span></button></div>
+    <div class="ssec">
+      <h3>テーマ応募</h3>
+      <div class="srow2"><input id="themeIn" type="text" maxlength="30" placeholder="テーマ（30文字まで）" autocomplete="off"><button class="sbtn" id="themeSend" type="button">応募</button></div>
+    </div>
+    <div class="ssec" id="adminGate" hidden>
+      <h3>管理人</h3>
+      <div class="srow2"><input id="adminPass" type="password" placeholder="パスコード" autocomplete="off"><button class="sbtn" id="adminGo" type="button">認証</button></div>
+    </div>
+    <div class="ssec" id="adminBox" hidden>
+      <h3>応募の審査</h3>
+      <div id="subList"></div>
+      <div class="srow2" style="margin-top:8px"><button class="sbtn" id="adminOut" type="button">管理者をやめる</button></div>
+    </div>
   </div>
 </div>
 <script>
@@ -576,7 +602,7 @@ body{
     if(e.key===" "||e.key==="Enter"){e.preventDefault();release(true)}
   });
   var sq=document.getElementById("sq"),sqPressed=false;
-  function sqPress(){if(sqPressed)return;sqPressed=true;holdDown(sq);clickSq(true);humStart();buzz(10);showChart()}
+  function sqPress(){if(sqPressed)return;sqPressed=true;seqPush("s");holdDown(sq);clickSq(true);humStart();buzz(10);showChart()}
   function sqRelease(){if(!sqPressed)return;sqPressed=false;holdUp(sq);humStop();clickSq(false);buzz(5);hideChart()}
   sq.addEventListener("pointerdown",function(e){
     if(e.pointerType==="mouse"&&e.button!==0)return;
@@ -592,7 +618,7 @@ body{
   });
   sq.addEventListener("contextmenu",function(e){e.preventDefault()});
   var rb=document.getElementById("rb"),rbPressed=false;
-  function rbPress(){if(rbPressed)return;rbPressed=true;holdDown(rb);clickRb(true);buzz(12);showTheme()}
+  function rbPress(){if(rbPressed)return;rbPressed=true;seqPush("r");holdDown(rb);clickRb(true);buzz(12);showTheme()}
   function rbRelease(){if(!rbPressed)return;rbPressed=false;holdUp(rb);clickRb(false);buzz(5);hideTheme()}
   rb.addEventListener("pointerdown",function(e){
     if(e.pointerType==="mouse"&&e.button!==0)return;
@@ -732,19 +758,25 @@ body{
       pushPost("/unsubscribe",{topic:TOPIC,deviceId:deviceId()}).catch(function(){});
       say("通知をオフにしました");return;
     }
+    // スイッチは先にオンにして、通信（購読）は裏で行う。失敗したらオフに戻す。
+    function turnOn(){
+      notifyOn=true;setNotifyOff(false);setBell(true);
+      subscribe().then(function(ok){
+        if(!notifyOn){pushPost("/unsubscribe",{topic:TOPIC,deviceId:deviceId()}).catch(function(){});return} // 待っている間にオフにされた
+        say(ok?"通知をオンにしました。アプリを閉じていても届きます。":"通知をオンにしました。このタブを開いたままにしてください。");
+      }).catch(function(){notifyOn=false;setBell(false);say("通知を設定できませんでした")});
+    }
+    if(Notification.permission==="granted"){turnOn();return}
     Notification.requestPermission().then(function(p){
       if(p!=="granted"){setBell(false);say("通知が許可されませんでした。ブラウザの設定から変更できます。",true);return}
-      return subscribe().then(function(ok){
-        notifyOn=true;setNotifyOff(false);setBell(true);
-        say(ok?"通知をオンにしました。アプリを閉じていても届きます。":"通知をオンにしました。このタブを開いたままにしてください。");
-      });
+      turnOn();
     }).catch(function(){say("通知を設定できませんでした")});
   }
   // 黒いボタン → 設定画面
   var settingsEl=document.getElementById("settings"),notifySw=document.getElementById("notifySw");
   var settingsOpenedAt=0;
-  function openSettings(){settingsEl.hidden=false;settingsOpenedAt=Date.now();try{notifySw.focus()}catch(e){}}
-  function closeSettings(){settingsEl.hidden=true;try{gm.focus()}catch(e){}}
+  function openSettings(){settingsEl.hidden=false;settingsOpenedAt=Date.now();try{notifySw.focus()}catch(e){}checkAdmin()}
+  function closeSettings(){settingsEl.hidden=true;gateEl.hidden=true;adminPass.value="";try{gm.focus()}catch(e){}}
   // 黒いボタン：閉じているときは開く。開いてから2秒たったあとにもう一度押すと閉じる（2秒以内は何もしない）。
   function toggleSettings(){
     if(settingsEl.hidden)openSettings();
@@ -755,6 +787,114 @@ body{
   document.getElementById("sclose").addEventListener("click",closeSettings);
   document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!settingsEl.hidden)closeSettings()});
   notifySw.addEventListener("click",toggleNotify);
+
+  // ===== テーマ応募と管理人 =====
+  // 応募は Firebase の themeSubmissions に書き込む。採用・不採用を決められるのは「管理者」だけ。
+  // 管理者かどうかはこの画面ではなく Firebase ルールが判断する（パスコードもこのファイルには書かない）。
+  var themeIn=document.getElementById("themeIn"),themeSend=document.getElementById("themeSend");
+  var gateEl=document.getElementById("adminGate"),adminPass=document.getElementById("adminPass"),adminGo=document.getElementById("adminGo");
+  var adminBox=document.getElementById("adminBox"),subList=document.getElementById("subList"),adminOut=document.getElementById("adminOut");
+  var isAdmin=false,subQ=null,SUBMIT_KEY="button_theme_submit_at";
+
+  function sendTheme(){
+    var t=themeIn.value.trim();
+    if(!t){say("テーマを入力してください");return}
+    if(t.length>30){say("テーマは30文字までです");return}
+    if(!db){say("通信できません");return}
+    var last=0;try{last=+localStorage.getItem(SUBMIT_KEY)||0}catch(e){}
+    if(Date.now()-last<60000){say("少し待ってからもう一度応募してください");return}
+    themeSend.disabled=true;
+    ensureAuth().then(function(u){
+      return db.ref("themeSubmissions/"+u.uid+"_"+Date.now()).set({uid:u.uid,text:t,status:"pending",at:TS});
+    }).then(function(){
+      try{localStorage.setItem(SUBMIT_KEY,String(Date.now()))}catch(e){}
+      themeIn.value="";say("応募しました。管理人が確認します");
+    }).catch(function(e){dbg("テーマの応募",e);say("応募できませんでした")}).then(function(){themeSend.disabled=false});
+  }
+  themeSend.addEventListener("click",sendTheme);
+  themeIn.addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.isComposing){e.preventDefault();sendTheme()}});
+
+  // --- 管理人への入口：特定の順番でボタンを押すとパスコード欄が出る（赤ボタンは使わない） ---
+  // 白→白→古びた→白→古びた（3秒以内に続けて押す）。この順番が知られても、パスコードが無ければ何もできない。
+  var SEQ="ssrsr",seqBuf="",seqT=0;
+  function seqPush(c){
+    var t=Date.now();if(t-seqT>3000)seqBuf="";seqT=t;
+    seqBuf=(seqBuf+c).slice(-SEQ.length);
+    if(seqBuf===SEQ){seqBuf="";showGate()}
+  }
+  function showGate(){
+    openSettings();
+    if(isAdmin)return;
+    gateEl.hidden=false;try{adminPass.focus()}catch(e){}
+  }
+  function setAdmin(v){
+    isAdmin=v;adminBox.hidden=!v;
+    if(v){gateEl.hidden=true;watchSubs()}else unwatchSubs();
+  }
+  function checkAdmin(){
+    if(!db)return;
+    ensureAuth().then(function(u){return db.ref("admins/"+u.uid).once("value")})
+      .then(function(sn){setAdmin(sn.val()===true)}).catch(function(e){dbg("管理者の確認",e)});
+  }
+
+  // --- パスコード認証：パスコードを Firebase に送り、ルールが adminSecret と照合する ---
+  var loginFails=0,lockUntil=0;
+  function adminLogin(){
+    var pw=adminPass.value;if(!pw||!db)return;
+    if(Date.now()<lockUntil){say("しばらく待ってからやり直してください");return}
+    adminGo.disabled=true;
+    ensureAuth().then(function(u){
+      return db.ref("adminLogin/"+u.uid).set(pw)
+        .then(function(){return db.ref("admins/"+u.uid).set(true)})
+        .catch(function(e){db.ref("adminLogin/"+u.uid).remove().catch(function(){});throw e});
+    }).then(function(){
+      loginFails=0;adminPass.value="";setAdmin(true);say("管理者として認証しました");
+    }).catch(function(e){
+      dbg("管理者の認証",e);adminPass.value="";
+      if(e&&e.code==="PERMISSION_DENIED"){
+        if(++loginFails>=5){lockUntil=Date.now()+60000;loginFails=0}
+        say("認証できませんでした");
+      }else say("通信できませんでした");
+    }).then(function(){adminGo.disabled=false});
+  }
+  adminGo.addEventListener("click",adminLogin);
+  adminPass.addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.isComposing){e.preventDefault();adminLogin()}});
+  adminOut.addEventListener("click",function(){
+    ensureAuth().then(function(u){return db.ref("admins/"+u.uid).remove()})
+      .then(function(){setAdmin(false);say("管理者をやめました")}).catch(function(e){dbg("管理者をやめる",e);say("操作に失敗しました")});
+  });
+
+  // --- 審査：未処理の応募を一覧にして、採用（themes に追加）か不採用を選ぶ ---
+  function watchSubs(){
+    if(subQ||!db)return;
+    subQ=db.ref("themeSubmissions").orderByChild("status").equalTo("pending");
+    subQ.on("value",renderSubs,function(e){ // 権限なし（パスコードが変わった等）
+      dbg("応募の読み込み",e);subQ=null;isAdmin=false;adminBox.hidden=true;say("管理者の権限がありません");
+    });
+  }
+  function unwatchSubs(){if(subQ){try{subQ.off()}catch(e){}subQ=null}}
+  function renderSubs(sn){
+    var items=[];sn.forEach(function(c){var v=c.val();if(v&&typeof v.text==="string")items.push({id:c.key,text:v.text,at:+v.at||0})});
+    items.sort(function(a,b){return a.at-b.at});
+    subList.textContent="";
+    if(!items.length){var n=document.createElement("div");n.className="subnone";n.textContent="審査待ちの応募はありません";subList.appendChild(n);return}
+    items.forEach(function(it){
+      var row=document.createElement("div");row.className="sub";
+      var tx=document.createElement("span");tx.className="stext";tx.textContent=it.text;
+      var ok=document.createElement("button");ok.type="button";ok.className="sbtn ok";ok.textContent="採用";
+      var no=document.createElement("button");no.type="button";no.className="sbtn no";no.textContent="不採用";
+      ok.addEventListener("click",function(){decide(it,true,[ok,no])});
+      no.addEventListener("click",function(){decide(it,false,[ok,no])});
+      row.appendChild(tx);row.appendChild(ok);row.appendChild(no);subList.appendChild(row);
+    });
+  }
+  function decide(it,adopt,btns){
+    btns.forEach(function(b){b.disabled=true});
+    var up={};up["themeSubmissions/"+it.id+"/status"]=adopt?"approved":"rejected";
+    if(adopt)up["themes/"+db.ref("themes").push().key]=it.text;
+    db.ref().update(up).then(function(){say(adopt?"採用しました（テーマ一覧に追加）":"不採用にしました")})
+      .catch(function(e){dbg("審査",e);btns.forEach(function(b){b.disabled=false});say("操作に失敗しました")});
+  }
   setBell(false);
   if(pushOK()&&Notification.permission==="granted"&&!notifyOff()){
     notifyOn=true;setBell(true);
