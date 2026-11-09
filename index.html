@@ -798,7 +798,7 @@ body{
     return pairCall("/pair/status").then(function(r){
       if(mode!=="pair")return;
       if(r.state==="none"){ // サーバー側の記録が消えていたら入り直す
-        return subscribe().then(function(sub){return pairCall("/pair/join",{subscription:sub})}).then(function(r2){if(mode==="pair")applyPair(r2,quiet)});
+        return joinPair(false).then(function(r2){if(r2&&mode==="pair")applyPair(r2,quiet)});
       }
       applyPair(r,quiet);
     }).catch(function(e){dbg("ペアの確認",e)});
@@ -807,18 +807,32 @@ body{
   function stopPoll(){clearInterval(pairTimer);pairTimer=0}
   document.addEventListener("visibilitychange",function(){if(!document.hidden&&mode==="pair")pollPair(false)});
 
+  // 通知の購読を作って返す。通知が使えない・オフにしている・許可されない・失敗したときは null（通知なしで続ける）。
+  // 許可の確認は ask が true で、まだ聞いていない（default）ときだけ。ブラウザの仕様で、ボタンを押した処理の中から直接呼ぶ必要がある。
+  function pushSubOrNull(ask){
+    if(notifyOff()||!pushOK())return Promise.resolve(null);
+    var perm=Notification.permission;
+    var p=(perm==="default"&&ask)?Notification.requestPermission():Promise.resolve(perm);
+    return p.then(function(r){return r==="granted"?subscribe():null}).catch(function(e){dbg("通知の購読",e);return null});
+  }
+  // 「だれかと」に参加する（または入り直す）。通知が使えるときだけ購読を添える。通知なしでも参加できる。
+  // entering=true はモードに入るとき（通知の許可を聞く）。false のとき、待っている間に「みんなで」へ戻っていたら何も送らず null を返す。
+  function joinPair(entering){
+    return pushSubOrNull(entering).then(function(sub){
+      if(!entering&&mode!=="pair")return null;
+      return pairCall("/pair/join",sub?{subscription:sub}:{}).then(function(r){
+        if(entering||mode==="pair"){notifyOn=!!sub;setBell(notifyOn)}
+        return r;
+      });
+    });
+  }
   function enterPair(){
-    if(!pushOK()){say("この端末・ブラウザでは通知を使えません。iPhone は「ホーム画面に追加」してから開いてください。");return}
     modeBusy=true;
-    var ask=Notification.permission==="granted"?Promise.resolve("granted"):Notification.requestPermission();
-    ask.then(function(p){
-      if(p!=="granted"){say("通知を許可すると「だれかと」を使えます");throw 0}
-      return subscribe();
-    }).then(function(sub){return pairCall("/pair/join",{subscription:sub})}).then(function(r){
+    joinPair(true).then(function(r){
       saveMode("pair");try{localStorage.removeItem(PENDING_KEY)}catch(e){}
-      notifyOn=true;setBell(true);buildLeds();applyPair(r,true);startPoll();
-      say(r.state==="paired"?"だれかと：相手が決まりました":"だれかと：相手を探しています");
-    }).catch(function(e){if(e!==0){dbg("だれかと",e);say("切り替えられませんでした")}}).then(function(){modeBusy=false});
+      buildLeds();applyPair(r,true);startPoll();
+      say((r.state==="paired"?"だれかと：相手が決まりました":"だれかと：相手を探しています")+(notifyOn?"":"（通知なし）"));
+    }).catch(function(e){dbg("だれかと",e);say("切り替えられませんでした")}).then(function(){modeBusy=false});
   }
   function leavePair(){
     saveMode("crowd");stopPoll();pairState="none";pairPid=null;notifyOn=false;setBell(false);buildLeds();lamp();
@@ -826,19 +840,34 @@ body{
     pairCall("/pair/leave").then(function(){try{localStorage.removeItem(PENDING_KEY)}catch(e){}}).catch(function(e){dbg("だれかとをやめる",e)});
     say("みんなで");
   }
-  // モードの切り替えボタン（白いボタンの左）。相手が決まっているときは、間違って押さないよう3秒以内にもう一度押したときだけ解除する。
+  // モードの切り替えボタン（液晶の左下）。相手が決まっているときは、間違って押さないよう3秒以内にもう一度押したときだけ解除する。
   md.addEventListener("click",function(){
     if(modeBusy)return;
     if(mode!=="pair"){enterPair();return}
     if(pairState==="paired"&&Date.now()-armedAt>3000){armedAt=Date.now();say("もう一度押すと、今の相手とのペアを解除して「みんなで」に戻ります");return}
     armedAt=0;leavePair();
   });
-  // 設定の「通知」スイッチ：通知は「だれかと」のときだけ使う。オフにすると「みんなで」に戻る。
+  // 設定の「通知」スイッチ：「だれかと」のときの通知（初めはオン）。オフにしても「だれかと」はそのまま使える。「みんなで」のときは通知を使わない。
   var lastToggle=0;
   function toggleNotify(){
     var t=Date.now();if(t-lastToggle<400)return;lastToggle=t;
-    if(mode==="pair"&&!modeBusy){leavePair();say("通知をオフにしたので「みんなで」に戻りました");return}
-    say("通知は「だれかと」のときだけ使えます。白いボタンの左のボタンで切り替えられます。");
+    if(mode!=="pair"){say("通知は「だれかと」のときだけ使えます。液晶の左下の灰色のボタンで切り替えられます。");return}
+    if(modeBusy)return;
+    if(notifyOn){ // オフにする：購読を解除し、サーバーにも通知なしで入り直す
+      setNotifyOff(true);notifyOn=false;setBell(false);
+      getReg().then(function(reg){return reg.pushManager.getSubscription()}).then(function(sub){return sub&&sub.unsubscribe()}).catch(function(e){dbg("通知の解除",e)});
+      pairCall("/pair/join").catch(function(e){dbg("通知オフの反映",e)});
+      say("通知をオフにしました。「だれかと」はそのまま使えます");
+      return;
+    }
+    setNotifyOff(false); // オンにする
+    if(!pushOK()){say("この端末・ブラウザでは通知を使えません。iPhone は「ホーム画面に追加」してから開いてください。");return}
+    if(Notification.permission==="denied"){say("通知がブロックされています。ブラウザの設定で許可してください");return}
+    modeBusy=true;
+    pushSubOrNull(true).then(function(sub){
+      if(!sub){say("通知を許可すると、相手が押したときにお知らせします");return}
+      return pairCall("/pair/join",{subscription:sub}).then(function(r){notifyOn=true;setBell(true);applyPair(r,true);say("通知をオンにしました")});
+    }).catch(function(e){dbg("通知をオン",e);say("通知をオンにできませんでした")}).then(function(){modeBusy=false});
   }
   // 黒いボタン → 設定画面
   var settingsEl=document.getElementById("settings"),notifySw=document.getElementById("notifySw");
@@ -979,14 +1008,10 @@ body{
       .catch(function(e){dbg("審査",e);btns.forEach(function(b){b.disabled=false});say("操作に失敗しました")});
   }
   setBell(false);
-  if(mode==="pair"){
-    if(pushOK()&&Notification.permission==="granted"){
-      notifyOn=true;setBell(true);lamp();
-      subscribe().then(function(sub){return pairCall("/pair/join",{subscription:sub})}).then(function(r){applyPair(r,true)}).catch(function(e){dbg("だれかと",e)});
-      startPoll();
-    }else{ // 通知の許可が外れていたら「みんなで」に戻す
-      saveMode("crowd");buildLeds();try{localStorage.setItem(PENDING_KEY,"1")}catch(e){}
-    }
+  if(mode==="pair"){ // 通知が使えなくても「だれかと」のまま入り直す（通知なし）
+    lamp();
+    joinPair(false).then(function(r){if(r)applyPair(r,true)}).catch(function(e){dbg("だれかと",e)});
+    startPoll();
   }
   if(mode==="crowd"){ // 前回「みんなで」に戻したときの解除が届いていなかったら、もう一度送る
     var pend=false;try{pend=localStorage.getItem(PENDING_KEY)==="1"}catch(e){}
