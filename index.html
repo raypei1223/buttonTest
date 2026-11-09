@@ -742,10 +742,16 @@ body{
   }
   // 黒いボタン → 設定画面
   var settingsEl=document.getElementById("settings"),notifySw=document.getElementById("notifySw");
-  function openSettings(){settingsEl.hidden=false;try{notifySw.focus()}catch(e){}}
+  var settingsOpenedAt=0;
+  function openSettings(){settingsEl.hidden=false;settingsOpenedAt=Date.now();try{notifySw.focus()}catch(e){}}
   function closeSettings(){settingsEl.hidden=true;try{gm.focus()}catch(e){}}
-  gm.addEventListener("click",openSettings);
-  gm.addEventListener("keyup",function(e){if(e.key===" "||e.key==="Enter")openSettings()});
+  // 黒いボタン：閉じているときは開く。開いてから2秒たったあとにもう一度押すと閉じる（2秒以内は何もしない）。
+  function toggleSettings(){
+    if(settingsEl.hidden)openSettings();
+    else if(Date.now()-settingsOpenedAt>=2000)closeSettings();
+  }
+  gm.addEventListener("click",toggleSettings);
+  gm.addEventListener("keyup",function(e){if(e.key===" "||e.key==="Enter")toggleSettings()});
   document.getElementById("sclose").addEventListener("click",closeSettings);
   document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!settingsEl.hidden)closeSettings()});
   notifySw.addEventListener("click",toggleNotify);
