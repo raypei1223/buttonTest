@@ -605,6 +605,7 @@ body{
   function release(done){
     if(!pressed)return;pressed=false;holdUp(btn);click(false);buzz(6);
     if(!done)return;
+    autoNotifyOn(); // 通知が許可されているのに通知オフのままなら、自動でオンにする
     refreshDay(); // 押している間に別の画面で押された・日付が変わった、に備えて数え直す
     if(left<=0){say("今日はもう押せません",true);return}
     var day=today(),kind=ledKind;dropLed();
@@ -839,6 +840,20 @@ body{
     try{localStorage.setItem(PENDING_KEY,"1")}catch(e){}
     pairCall("/pair/leave").then(function(){try{localStorage.removeItem(PENDING_KEY)}catch(e){}}).catch(function(e){dbg("だれかとをやめる",e)});
     say("みんなで");
+  }
+  // 「だれかと」でボタンを押したとき、通知が許可されているのに通知がオフなら、自動でオンにする（許可の確認は出さない）。
+  var autoNotifyBusy=false;
+  function autoNotifyOn(){
+    if(mode!=="pair"||notifyOn||autoNotifyBusy||modeBusy)return;
+    if(!pushOK()||Notification.permission!=="granted")return;
+    autoNotifyBusy=true;setNotifyOff(false);
+    pushSubOrNull(false).then(function(sub){
+      if(!sub||mode!=="pair")return;
+      return pairCall("/pair/join",{subscription:sub}).then(function(r){
+        if(mode!=="pair")return;
+        notifyOn=true;setBell(true);applyPair(r,true);say("通知をオンにしました");
+      });
+    }).catch(function(e){dbg("通知の自動オン",e)}).then(function(){autoNotifyBusy=false});
   }
   // モードの切り替えボタン（液晶の左下）。相手が決まっているときは、間違って押さないよう3秒以内にもう一度押したときだけ解除する。
   md.addEventListener("click",function(){
