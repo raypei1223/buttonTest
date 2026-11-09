@@ -266,6 +266,7 @@ body{
   background:radial-gradient(ellipse at 50% 55%,rgba(46,224,106,.32),rgba(46,224,106,.07) 70%);
   opacity:0;transition:opacity .45s ease-out}
 .chart.on::before{opacity:1;transition-duration:.1s}
+.chart.tap::before{opacity:.4;transition-duration:.03s}
 .chart::after{ /* ガラスの斜めの映り込みと、穴の縁が落とす影 */
   content:"";position:absolute;inset:0;border-radius:inherit;z-index:2;pointer-events:none;
   background:linear-gradient(115deg,rgba(255,255,255,.17) 0,rgba(255,255,255,.04) 36%,rgba(255,255,255,0) 37%);
@@ -815,17 +816,28 @@ body{
   themeIn.addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.isComposing){e.preventDefault();sendTheme()}});
 
   // --- 管理人への入口：特定の順番でボタンを押すとパスコード欄が出る（赤ボタンは使わない） ---
-  // 白→白→古びた→白→古びた→上の画面を3回タップ（それぞれ前の操作から3秒以内）。この順番が知られても、パスコードが無ければ何もできない。
-  var SEQ="ssrsrttt",seqBuf="",seqT=0;
+  // 白→白→古びた→白→古びた（それぞれ前の操作から3秒以内）。揃った時点から3秒間だけ、上の黒い画面のタップを数える。
+  // その3秒の間に画面を3回タップすると、パスコード欄が出る。この手順が知られても、パスコードが無ければ何もできない。
+  var SEQ="ssrsr",seqBuf="",seqT=0,armedUntil=0,tapN=0;
   function seqPush(c){
     var t=Date.now();if(t-seqT>3000)seqBuf="";seqT=t;
+    armedUntil=0;tapN=0; // 画面のタップ待ちの間にほかのボタンを押したら、やり直し
     seqBuf=(seqBuf+c).slice(-SEQ.length);
-    if(seqBuf===SEQ){seqBuf="";showGate()}
+    if(seqBuf===SEQ){seqBuf="";armedUntil=t+3000;tapN=0}
   }
-  document.getElementById("chart").addEventListener("pointerdown",function(e){
+  // 画面(#chart)は pointer-events:none なので、画面全体で受けて、タップした位置が画面の中かどうかで判定する。
+  // 判定が有効な3秒の間にタップされたら、画面がほんの少しだけ光る。
+  var chartDom=document.getElementById("chart"),tapFlashT=0;
+  document.addEventListener("pointerdown",function(e){
     if(e.pointerType==="mouse"&&e.button!==0)return;
-    seqPush("t");
-  });
+    if(Date.now()>=armedUntil)return;
+    if(e.target&&e.target.closest&&e.target.closest("#settings"))return;
+    var r=chartDom.getBoundingClientRect();
+    if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)return;
+    chartDom.classList.add("tap");clearTimeout(tapFlashT);
+    tapFlashT=setTimeout(function(){chartDom.classList.remove("tap")},90);
+    if(++tapN>=3){armedUntil=0;tapN=0;showGate()}
+  },true);
   function showGate(){
     openSettings();
     if(isAdmin)return;
