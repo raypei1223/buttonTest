@@ -806,6 +806,7 @@ body{
   }
   // サーバーの返事（state: none/waiting/paired、pid: 組み合わせの印）を画面に反映する。quiet のときは何も言わない。
   function applyPair(r,quiet){
+    if(r&&r.state==="released"){releasedByServer();return} // サーバーが「しばらく押さなかった」として外した
     var was=pairState,wasPid=pairPid;
     pairState=r.state;pairPid=r.pid||null;lamp();if(ledKind!==ledKindNow())buildLeds();
     if(quiet)return;
@@ -839,7 +840,8 @@ body{
   function joinPair(entering){
     return pushSubOrNull(entering).then(function(sub){
       if(!entering&&mode!=="pair")return null;
-      return pairCall("/pair/join",sub?{subscription:sub}:{}).then(function(r){
+      var ex=sub?{subscription:sub}:{};if(entering)ex.entering=true; // 本人がモードに入ったときは、押さない期間を数え直してもらう
+      return pairCall("/pair/join",ex).then(function(r){
         if(entering||mode==="pair"){notifyOn=!!sub;setBell(notifyOn)}
         return r;
       });
@@ -852,6 +854,12 @@ body{
       buildLeds();applyPair(r,true);startPoll();
       say((r.state==="paired"?"だれかと：相手が決まりました":"だれかと：相手を探しています")+(notifyOn?"":"（通知なし）"));
     }).catch(function(e){dbg("だれかと",e);say("切り替えられませんでした")}).then(function(){modeBusy=false});
+  }
+  // サーバーから「1日以上押さなかったので外した」と言われたとき：サーバーへ何も送らずに「みんなで」に戻る
+  function releasedByServer(){
+    saveMode("crowd");stopPoll();pairState="none";pairPid=null;notifyOn=false;setBell(false);buildLeds();lamp();
+    try{localStorage.removeItem(PENDING_KEY)}catch(e){}
+    say("1日以上押さなかったので「みんなで」に戻りました");
   }
   function leavePair(){
     saveMode("crowd");stopPoll();pairState="none";pairPid=null;notifyOn=false;setBell(false);buildLeds();lamp();
