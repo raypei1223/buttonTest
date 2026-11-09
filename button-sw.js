@@ -11,7 +11,7 @@ self.addEventListener("push", (e) => {
   const tag = "button";
   e.waitUntil((async () => {
     await self.registration.showNotification("ボタン", {
-      body: "赤いボタンが押されました",
+      body: "ペアがボタンを押しました",
       tag,
       renotify: true,
       icon: "button-icon-192.png",
