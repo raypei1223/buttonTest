@@ -564,7 +564,7 @@ body{
   ["pointerup","touchend","click","keyup"].forEach(function(t){document.addEventListener(t,unlockAudio,true)});
   function buzz(ms){try{if(navigator.vibrate)navigator.vibrate(ms)}catch(e){}}
 
-  // 緑のLED：押すたびに右から1個ずつ消える。「みんなで」は1日1回、「だれかと」は1日3回（回数はモードごとに別々に数える）
+  // 緑のLED：押すたびに右から1個ずつ消える。「みんなで」は1日1回、「だれかと」は1日3回（回数はモードごとに別々に数える）。「だれかと」の3個は、相手が決まってから（相手を探している間は「みんなで」と同じ：1個・みんなでの記録・通知なし）
   var MODE_KEY="button_mode",PENDING_KEY="button_pair_leave";
   var mode="crowd";try{if(localStorage.getItem(MODE_KEY)==="pair")mode="pair"}catch(e){}
   var LED_COUNT=1,left=1,ledBox=document.getElementById("leds"),leds=[];
@@ -576,8 +576,12 @@ body{
   function saveUsed(n){try{localStorage.setItem(PRESS_KEY,JSON.stringify({d:today(),n:n}))}catch(e){}}
   function showLeds(){ledBox.setAttribute("aria-label","残り "+left)}
   function syncLeds(){for(var i=0;i<LED_COUNT;i++)leds[i].classList.toggle("on",i<left);showLeds()}
+  // LEDの種類：crowd=みんなで、または「だれかと」で相手を探している間(1個) / pair=「だれかと」で相手が決まっている(3個)
+  var ledKind="crowd";
+  function ledKindNow(){return(mode==="pair"&&pairState==="paired")?"pair":"crowd"}
   function buildLeds(){
-    LED_COUNT=mode==="pair"?3:1;PRESS_KEY=mode==="pair"?"button_press_day_pair":"button_press_day";
+    ledKind=ledKindNow();
+    LED_COUNT=ledKind==="pair"?3:1;PRESS_KEY=ledKind==="pair"?"button_press_day_pair":"button_press_day";
     ledBox.textContent="";leds=[];
     for(var i=0;i<LED_COUNT;i++){
       var l=document.createElement("span");l.className="led on";
@@ -586,16 +590,16 @@ body{
     }
     left=LED_COUNT-usedToday();syncLeds();
   }
-  function refreshDay(){var l=LED_COUNT-usedToday();if(l!==left){left=l;syncLeds()}}
+  function refreshDay(){if(ledKind!==ledKindNow()){buildLeds();return}var l=LED_COUNT-usedToday();if(l!==left){left=l;syncLeds()}}
   function dropLed(){if(left<=0)return;left--;saveUsed(LED_COUNT-left);leds[left].classList.remove("on");showLeds()}
-  function giveBackLed(day){if(today()!==day||left>=LED_COUNT)return;leds[left].classList.add("on");left++;saveUsed(LED_COUNT-left);showLeds()}
+  function giveBackLed(day,kind){if(kind!==ledKind||today()!==day||left>=LED_COUNT)return false;leds[left].classList.add("on");left++;saveUsed(LED_COUNT-left);showLeds();return true}
   buildLeds();
 
   var btn=document.getElementById("btn"),pressed=false;
   function holdDown(el){el._t0=performance.now();clearTimeout(el._ut);el.classList.add("down")}
   function holdUp(el){var w=90-(performance.now()-el._t0);if(w>0){el._ut=setTimeout(function(){el.classList.remove("down")},w)}else{el.classList.remove("down")}}
   // 押し込んだ瞬間：ボタンが沈み、クリック音と振動が出る。LED・点・通知は、まだ変わらない。
-  function press(){if(pressed)return;refreshDay();if(mode==="pair"&&pairState!=="paired"){say("まだ相手がいません。見つかるまでお待ちください",true);pollPair(false);return}if(left<=0){say("今日はもう押せません",true);return}pressed=true;holdDown(btn);click(true);buzz(14)}
+  function press(){if(pressed)return;refreshDay();if(left<=0){say("今日はもう押せません",true);return}pressed=true;holdDown(btn);click(true);buzz(14)}
   // 離した瞬間（done=true）：LEDが1つ消え、点を記録して、ほかの人へ通知する。記録に失敗したらLEDを戻す。
   // 押している途中で中断されたとき（done=false：pointercancel など）は、何も起こさない（LEDも消えない）。
   function release(done){
@@ -603,8 +607,8 @@ body{
     if(!done)return;
     refreshDay(); // 押している間に別の画面で押された・日付が変わった、に備えて数え直す
     if(left<=0){say("今日はもう押せません",true);return}
-    var day=today();dropLed();
-    announce().then(function(ok){if(!ok){giveBackLed(day);say("記録できませんでした。もう一度押せます",true)}});
+    var day=today(),kind=ledKind;dropLed();
+    announce().then(function(ok){if(!ok){var back=giveBackLed(day,kind);say(back?"記録できませんでした。もう一度押せます":"記録できませんでした",true)}});
   }
 
   btn.addEventListener("pointerdown",function(e){
@@ -784,7 +788,7 @@ body{
   // サーバーの返事（state: none/waiting/paired、pid: 組み合わせの印）を画面に反映する。quiet のときは何も言わない。
   function applyPair(r,quiet){
     var was=pairState,wasPid=pairPid;
-    pairState=r.state;pairPid=r.pid||null;lamp();
+    pairState=r.state;pairPid=r.pid||null;lamp();if(ledKind!==ledKindNow())buildLeds();
     if(quiet)return;
     if(pairState==="paired"&&(was!=="paired"||wasPid!==pairPid))say(was==="paired"?"新しい相手が決まりました":"相手が決まりました");
     else if(pairState==="waiting"&&was==="paired")say("相手がいなくなりました。新しい相手を探しています");
@@ -995,9 +999,9 @@ body{
   //    ログイン失敗や権限エラーなど、はっきり失敗したときだけ false。8秒たっても返事がないとき（圏外など）は、数えたままにする（true）。
   //  ・通知 … Web Push（Cloudflare Worker）。記録が成功したとき（または Firebase を使えないとき）だけ送る。
   function announce(){
-    function notify(){if(mode!=="pair")return;try{pairCall("/pair/notify").then(function(r){applyPair(r,false)}).catch(function(e){dbg("相手への通知",e)})}catch(e){}}
+    function notify(){if(mode!=="pair"||pairState!=="paired")return;try{pairCall("/pair/notify").then(function(r){applyPair(r,false)}).catch(function(e){dbg("相手への通知",e)})}catch(e){}}
     if(!db){notify();return Promise.resolve(true)}
-    var dk=themeKey(0),src=graphSrc(),path=graphPath(dk,true),now=Date.now()+serverOff;
+    var dk=themeKey(0),src=graphSrc(),path=graphPath(dk),now=Date.now()+serverOff;
     if(!path){notify();return Promise.resolve(true)} // 「だれかと」でペアの印がないとき：点は打たず、通知だけ送る
     var b=Math.max(0,Math.min(287,Math.floor((now-jstDayStart(now))/BUCKET)));
     if(countsDay!==dk||countsSrc!==src){counts={};unacked={};countsDay=dk;countsSrc=src}
@@ -1023,22 +1027,18 @@ body{
   function pad3(n){return("00"+n).slice(-3)}
   function jstDayStart(now){return Math.floor((now+32400000)/86400000)*86400000-32400000} // 日本時間のその日の0時（ミリ秒）
   // グラフの点の出どころ。「だれかと」でペアが決まっている間は、その2人組だけの記録（pairCounts/<pid>/<日付>）。それ以外は全員の記録（pressCounts/<日付>）。
-  // 「だれかと」で押した分は、みんなでの記録（pressCounts）には書かない。pid は Firebase のキーに使えない文字（. $ # [ ] /）を _ に置き換える。
+  // 「だれかと」でペアが決まっている間に押した分は、みんなでの記録（pressCounts）には書かない（相手を探している間に押した分は、みんなでと同じ扱い）。pid は Firebase のキーに使えない文字（. $ # [ ] /）を _ に置き換える。
   var countsSrc="";
   function pairKey(){if(pairPid===null||pairPid===undefined)return null;var k=String(pairPid).replace(/[.$#\[\]\/]/g,"_").slice(0,64);return k||null}
   function graphSrc(){return(mode==="pair"&&pairState==="paired")?"pair:"+(pairKey()||""):"crowd"}
-  function graphPath(dk,forWrite){
-    if(mode==="pair"){
-      var k=pairState==="paired"?pairKey():null;
-      if(k)return "pairCounts/"+k+"/"+dk;
-      return forWrite?null:"pressCounts/"+dk; // 書くときは、みんなでの記録には絶対に書かない（null）。読むだけなら全員の記録
-    }
+  function graphPath(dk){
+    if(mode==="pair"&&pairState==="paired"){var k=pairKey();return k?"pairCounts/"+k+"/"+dk:null} // ペアが決まっているのに印がないときは、どこにも書かない・読まない（みんなでの記録には混ぜない）
     return "pressCounts/"+dk;
   }
   // 今日の分（5分ごとの押された回数）だけを読む。1日あたり最大288件の小さな数字なので軽い。
   function loadPresses(){
     if(!db)return Promise.resolve();
-    var dk=themeKey(0),src=graphSrc(),path=graphPath(dk,false);
+    var dk=themeKey(0),src=graphSrc(),path=graphPath(dk);
     if(!path){if(countsDay!==dk||countsSrc!==src)unacked={};counts={};countsDay=dk;countsSrc=src;return Promise.resolve()}
     return ensureAuth().then(function(){return db.ref(path).once("value")}).then(function(sn){
       var c={};
