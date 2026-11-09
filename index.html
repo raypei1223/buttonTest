@@ -272,11 +272,25 @@ body{
   box-shadow:inset 0 0 calc(var(--s)*.016) rgba(0,0,0,.6),inset 0 calc(var(--s)*.008) calc(var(--s)*.012) rgba(0,0,0,.3),inset 0 0 0 1px var(--sq-groove)}
 .chart .c{opacity:0;transition:opacity .5s ease-out}
 .chart.on .c{opacity:1;transition-duration:.1s}
+.chart .t.e{fill:#ffa628}
 .chart .t{fill:#5fe48a;font:600 8px ui-monospace,Menlo,Consolas,monospace;opacity:.6}
 .chart .l{stroke:rgba(94,228,138,.17);stroke-width:.6}
 .chart .now{stroke:#b8ffd0;stroke-width:.7;opacity:.85} /* 今の時刻を表す縦線 */
 .note{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 58px);transform:translateX(-50%);max-width:min(88vw,360px);padding:8px 14px;border-radius:10px;background:rgba(30,30,30,.82);color:#fff;font:13px/1.5 system-ui,sans-serif;text-align:center;opacity:0;pointer-events:none;transition:opacity .25s;z-index:6}
 .note.on{opacity:1}
+.settings{position:fixed;left:0;right:0;top:0;z-index:5;display:flex;justify-content:center;padding:calc(env(safe-area-inset-top,0px) + 12px) 12px 0;pointer-events:none;font-family:system-ui,-apple-system,"Hiragino Sans",sans-serif}
+.settings[hidden]{display:none}
+.spanel{pointer-events:auto;width:min(92vw,340px);background:#efece2;color:#26272b;border-radius:16px;padding:16px 18px 10px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.shead{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.shead h2{margin:0;font-size:17px;font-weight:600}
+.sclose{all:unset;cursor:pointer;width:32px;height:32px;display:grid;place-items:center;border-radius:50%;font-size:15px;-webkit-tap-highlight-color:transparent}
+.sclose:focus-visible,.sw:focus-visible{outline:3px solid #4b7bec;outline-offset:2px}
+.srow{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-top:1px solid rgba(0,0,0,.1)}
+.slabel{font-size:15px}
+.sw{all:unset;cursor:pointer;position:relative;width:48px;height:28px;border-radius:14px;background:#b4b7b0;transition:background .2s;-webkit-tap-highlight-color:transparent}
+.sw .knob{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.35);transition:transform .2s}
+.sw[aria-checked="true"]{background:#34a853}
+.sw[aria-checked="true"] .knob{transform:translateX(20px)}
 </style>
 </head>
 <body>
@@ -289,10 +303,16 @@ body{
 <div class="smalls">
 <button class="sq" id="sq" type="button" aria-label="小さなボタン"><span class="sqface"></span></button>
 <button class="rb" id="rb" type="button" aria-label="古びたボタン"><span class="rbcap"></span></button>
-<div class="gmwrap"><button class="gm" id="gm" type="button" aria-label="通知のオン・オフ" aria-pressed="false"><span class="gmdome"><span class="gmdent"></span><span class="gmfold"></span></span></button><div class="bell" id="bell" role="img" aria-label="通知はオフ">🔕</div></div>
+<div class="gmwrap"><button class="gm" id="gm" type="button" aria-label="設定を開く" aria-haspopup="dialog"><span class="gmdome"><span class="gmdent"></span><span class="gmfold"></span></span></button><div class="bell" id="bell" role="img" aria-label="通知はオフ">🔕</div></div>
 </div>
 </div>
 <div class="note" id="note" role="status" aria-live="polite"></div>
+<div class="settings" id="settings" hidden>
+  <div class="spanel" role="dialog" aria-modal="false" aria-labelledby="stitle">
+    <div class="shead"><h2 id="stitle">設定</h2><button class="sclose" id="sclose" type="button" aria-label="閉じる">✕</button></div>
+    <div class="srow"><span class="slabel" id="slabel">通知</span><button class="sw" id="notifySw" type="button" role="switch" aria-checked="false" aria-labelledby="slabel"><span class="knob"></span></button></div>
+  </div>
+</div>
 <script>
 (function(){
   var ctx=null,noise=null;
@@ -610,7 +630,7 @@ body{
   ["gesturestart","gesturechange","gestureend"].forEach(function(t){
     document.addEventListener(t,function(e){e.preventDefault()});
   });
-  document.addEventListener("touchstart",function(e){if(e.target&&e.target.closest&&e.target.closest("#gm"))return;e.preventDefault()},{passive:false});
+  document.addEventListener("touchstart",function(e){if(e.target&&e.target.closest&&e.target.closest("#gm,#settings"))return;e.preventDefault()},{passive:false});
 
   // ===== 通信（Firebase）と通知 =====
   // 赤いボタン(#btn)を押すたびに、このアプリを使っているほかの人へ通知する。
@@ -699,7 +719,7 @@ body{
       note.style.transform="translate(-50%,-50%)";
     }else{note.style.left="";note.style.top="";note.style.transform=""}
     note.textContent=t;note.classList.add("on");clearTimeout(noteT);noteT=setTimeout(function(){note.classList.remove("on")},3500)}
-  function setBell(on){bell.classList.toggle("on",on);bell.setAttribute("aria-label",on?"通知はオン":"通知はオフ");gm.setAttribute("aria-pressed",on?"true":"false");bell.textContent=on?"🔔":"🔕"}
+  function setBell(on){bell.classList.toggle("on",on);bell.setAttribute("aria-label",on?"通知はオン":"通知はオフ");bell.textContent=on?"🔔":"🔕";var sw=document.getElementById("notifySw");if(sw)sw.setAttribute("aria-checked",on?"true":"false")}
   function notifyOff(){try{return localStorage.getItem(NOTIFY_OFF_KEY)==="1"}catch(e){return false}}
   function setNotifyOff(v){try{if(v)localStorage.setItem(NOTIFY_OFF_KEY,"1");else localStorage.removeItem(NOTIFY_OFF_KEY)}catch(e){}}
 
@@ -720,8 +740,15 @@ body{
       });
     }).catch(function(){say("通知を設定できませんでした")});
   }
-  gm.addEventListener("click",toggleNotify);
-  gm.addEventListener("keyup",function(e){if(e.key===" "||e.key==="Enter")toggleNotify()});
+  // 黒いボタン → 設定画面
+  var settingsEl=document.getElementById("settings"),notifySw=document.getElementById("notifySw");
+  function openSettings(){settingsEl.hidden=false;try{notifySw.focus()}catch(e){}}
+  function closeSettings(){settingsEl.hidden=true;try{gm.focus()}catch(e){}}
+  gm.addEventListener("click",openSettings);
+  gm.addEventListener("keyup",function(e){if(e.key===" "||e.key==="Enter")openSettings()});
+  document.getElementById("sclose").addEventListener("click",closeSettings);
+  document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!settingsEl.hidden)closeSettings()});
+  notifySw.addEventListener("click",toggleNotify);
   setBell(false);
   if(pushOK()&&Notification.permission==="granted"&&!notifyOff()){
     notifyOn=true;setBell(true);
@@ -857,7 +884,7 @@ body{
   //  2) なければ、日付から計算して選び、記録する（先に書いた人が勝ち。負けたら、書かれていたほうを使う）。
   //  3) 記録の読み書きに失敗したときは、計算した結果をそのまま表示する（使い回さず、次回また試す）。
   function resolveTheme(key){
-    var def={text:DEFAULT_THEME,cache:false};
+    var def={text:null,cache:false,error:true}; // 読み込めなかった
     var flow=fetchThemeList().then(function(r){
       if(!r.ok)return def;
       if(!r.list.length)return{text:DEFAULT_THEME,cache:true};
@@ -894,16 +921,18 @@ body{
     return list[d[day%n]];
   }
   function escSvg(t){return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
-  function renderTheme(text,key){
+  function renderTheme(text,key,err){
     var W=320,H=84,maxW=W-32,body;
+    var c1=err?"#ffa628":"#2ee06a",c2=err?"#ffe2b0":"#c8ffd8";
+    if(err)text="テーマを読み込めませんでした";
     if(text===null){
       body='<text class="t" text-anchor="middle" x="'+(W/2)+'" y="'+(H/2+3)+'">...</text>';
     }else{
       var units=0;for(var i=0;i<text.length;i++)units+=text.charCodeAt(i)>255?1:.55;
       var size=Math.min(30,Math.max(12,maxW/Math.max(units,1))),fit=units*size>maxW?' textLength="'+maxW+'" lengthAdjust="spacingAndGlyphs"':'';
       var tx='<text text-anchor="middle" x="'+(W/2)+'" y="'+(H/2+size*.36+2)+'" font-size="'+size.toFixed(1)+'" font-weight="700" font-family="system-ui,\'Hiragino Sans\',\'Yu Gothic\',\'Noto Sans JP\',sans-serif"'+fit+'>'+escSvg(text)+'</text>';
-      body=tx.replace('<text ','<text fill="#2ee06a" filter="url(#tg)" ')+tx.replace('<text ','<text fill="#c8ffd8" ')
-        +'<text class="t" x="12" y="14">THEME</text><text class="t" text-anchor="end" x="'+(W-12)+'" y="14">'+escSvg(key.slice(5).replace("-","/"))+'</text>';
+      body=tx.replace('<text ','<text fill="'+c1+'" filter="url(#tg)" ')+tx.replace('<text ','<text fill="'+c2+'" ')
+        +'<text class="t'+(err?' e':'')+'" x="12" y="14">'+(err?'ERROR':'THEME')+'</text><text class="t'+(err?' e':'')+'" text-anchor="end" x="'+(W-12)+'" y="14">'+escSvg(key.slice(5).replace("-","/"))+'</text>';
     }
     chartEl.innerHTML='<svg viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">'
       +'<defs><filter id="tg" x="-20%" y="-60%" width="140%" height="220%"><feGaussianBlur stdDeviation="3.2"/></filter>'
@@ -917,7 +946,7 @@ body{
       renderTheme(null,key);
       resolveTheme(key).then(function(r){
         if(r.cache)themeCache={key:key,text:r.text};
-        if(themeOn&&screenMode==="theme"&&themeKey(0)===key)renderTheme(r.text,key);
+        if(themeOn&&screenMode==="theme"&&themeKey(0)===key)renderTheme(r.text,key,r.error);
       });
     }
     lightOn("theme");
