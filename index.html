@@ -675,7 +675,7 @@ body{
   ["gesturestart","gesturechange","gestureend"].forEach(function(t){
     document.addEventListener(t,function(e){e.preventDefault()});
   });
-  document.addEventListener("touchstart",function(e){if(e.target&&e.target.closest&&e.target.closest("#gm,#settings"))return;e.preventDefault()},{passive:false});
+  document.addEventListener("touchstart",function(e){if(e.target&&e.target.closest&&e.target.closest("#gm,#settings,#md"))return;e.preventDefault()},{passive:false});
 
   // ===== 通信（Firebase）と通知 =====
   // 赤いボタン(#btn)を押すたびに、このアプリを使っているほかの人へ通知する。
