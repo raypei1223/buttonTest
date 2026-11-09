@@ -305,6 +305,17 @@ body{
 .sub .stext{flex:1;min-width:0;word-break:break-all;font-size:14px}
 .subnone{font-size:13px;opacity:.6;padding:4px 0}
 .sw[aria-checked="true"] .knob{transform:translateX(20px)}
+/* モード切り替えボタン：灰色の丸いボタン。ランプ＝消灯:みんなで / 橙の点滅:相手を探し中 / 緑:相手が決まっている */
+.md{all:unset;position:relative;cursor:pointer;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
+  width:calc(var(--s)*.15);height:calc(var(--s)*.15);margin-bottom:calc(var(--s)*.03);border-radius:50%;
+  background:linear-gradient(160deg,#8d8a80,#5d5b54);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.35),inset 0 -2px 4px rgba(0,0,0,.35),0 calc(var(--s)*.014) calc(var(--s)*.02) var(--shadow)}
+.mdlamp{position:absolute;left:50%;top:50%;width:46%;height:46%;margin:-23% 0 0 -23%;border-radius:50%;background:#2b2b28;box-shadow:inset 0 1px 2px rgba(0,0,0,.7);transition:background .3s,box-shadow .3s}
+.md.on .mdlamp{background:#46e37d;box-shadow:0 0 calc(var(--s)*.03) #46e37d,inset 0 0 3px rgba(255,255,255,.6)}
+.md.wait .mdlamp{background:#ffb83d;box-shadow:0 0 calc(var(--s)*.025) #ffb83d;animation:mdblink 1.4s ease-in-out infinite}
+@keyframes mdblink{50%{opacity:.35}}
+.md:active{transform:translateY(1px)}
+.md:focus-visible{outline:3px solid var(--cap-hi);outline-offset:4px}
 </style>
 </head>
 <body>
@@ -315,6 +326,7 @@ body{
   <button class="btn" id="btn" type="button" aria-label="ボタン"><span class="cap"></span></button>
 </div></div>
 <div class="smalls">
+<button class="md" id="md" type="button" aria-label="みんなで" aria-pressed="false"><span class="mdlamp"></span></button>
 <button class="sq" id="sq" type="button" aria-label="小さなボタン"><span class="sqface"></span></button>
 <button class="rb" id="rb" type="button" aria-label="古びたボタン"><span class="rbcap"></span></button>
 <div class="gmwrap"><button class="gm" id="gm" type="button" aria-label="設定を開く" aria-haspopup="dialog"><span class="gmdome"><span class="gmdent"></span><span class="gmfold"></span></span></button><div class="bell" id="bell" role="img" aria-label="通知はオフ">🔕</div></div>
@@ -552,32 +564,38 @@ body{
   ["pointerup","touchend","click","keyup"].forEach(function(t){document.addEventListener(t,unlockAudio,true)});
   function buzz(ms){try{if(navigator.vibrate)navigator.vibrate(ms)}catch(e){}}
 
-  // 緑のLED：押すたびに右から1個ずつ消える
-  var LED_COUNT=1,left=LED_COUNT,ledBox=document.getElementById("leds"),leds=[];
+  // 緑のLED：押すたびに右から1個ずつ消える。「みんなで」は1日1回、「だれかと」は1日3回（回数はモードごとに別々に数える）
+  var MODE_KEY="button_mode",PENDING_KEY="button_pair_leave";
+  var mode="crowd";try{if(localStorage.getItem(MODE_KEY)==="pair")mode="pair"}catch(e){}
+  var LED_COUNT=1,left=1,ledBox=document.getElementById("leds"),leds=[];
   // 1日に押せるのは LED_COUNT 回まで。日付が変わると（日本時間 JST の0時に）回復する。端末のタイムゾーンには左右されない。
   var PRESS_KEY="button_press_day";
   // 日本時間の日付 "YYYY-M-D"。serverOff（サーバー時刻とのずれ）は後で宣言される変数なので、まだ無いときは0として扱う。
   function today(){var d=new Date(Date.now()+(typeof serverOff==="number"?serverOff:0)+9*3600000);return d.getUTCFullYear()+"-"+(d.getUTCMonth()+1)+"-"+d.getUTCDate()}
   function usedToday(){try{var o=JSON.parse(localStorage.getItem(PRESS_KEY)||"null");return(o&&o.d===today())?Math.max(0,Math.min(LED_COUNT,o.n|0)):0}catch(e){return 0}}
   function saveUsed(n){try{localStorage.setItem(PRESS_KEY,JSON.stringify({d:today(),n:n}))}catch(e){}}
-  left=LED_COUNT-usedToday();
-  for(var i=0;i<LED_COUNT;i++){
-    var l=document.createElement("span");l.className="led on";
-    l.innerHTML='<span class="glow"></span><span class="lens"><span class="lit"></span></span>';
-    ledBox.appendChild(l);leds.push(l);
-  }
   function showLeds(){ledBox.setAttribute("aria-label","残り "+left)}
   function syncLeds(){for(var i=0;i<LED_COUNT;i++)leds[i].classList.toggle("on",i<left);showLeds()}
+  function buildLeds(){
+    LED_COUNT=mode==="pair"?3:1;PRESS_KEY=mode==="pair"?"button_press_day_pair":"button_press_day";
+    ledBox.textContent="";leds=[];
+    for(var i=0;i<LED_COUNT;i++){
+      var l=document.createElement("span");l.className="led on";
+      l.innerHTML='<span class="glow"></span><span class="lens"><span class="lit"></span></span>';
+      ledBox.appendChild(l);leds.push(l);
+    }
+    left=LED_COUNT-usedToday();syncLeds();
+  }
   function refreshDay(){var l=LED_COUNT-usedToday();if(l!==left){left=l;syncLeds()}}
   function dropLed(){if(left<=0)return;left--;saveUsed(LED_COUNT-left);leds[left].classList.remove("on");showLeds()}
   function giveBackLed(day){if(today()!==day||left>=LED_COUNT)return;leds[left].classList.add("on");left++;saveUsed(LED_COUNT-left);showLeds()}
-  syncLeds();
+  buildLeds();
 
   var btn=document.getElementById("btn"),pressed=false;
   function holdDown(el){el._t0=performance.now();clearTimeout(el._ut);el.classList.add("down")}
   function holdUp(el){var w=90-(performance.now()-el._t0);if(w>0){el._ut=setTimeout(function(){el.classList.remove("down")},w)}else{el.classList.remove("down")}}
   // 押し込んだ瞬間：ボタンが沈み、クリック音と振動が出る。LED・点・通知は、まだ変わらない。
-  function press(){if(pressed)return;refreshDay();if(left<=0){say("今日はもう押せません",true);return}pressed=true;holdDown(btn);click(true);buzz(14)}
+  function press(){if(pressed)return;refreshDay();if(mode==="pair"&&pairState!=="paired"){say("まだ相手がいません。見つかるまでお待ちください",true);pollPair(false);return}if(left<=0){say("今日はもう押せません",true);return}pressed=true;holdDown(btn);click(true);buzz(14)}
   // 離した瞬間（done=true）：LEDが1つ消え、点を記録して、ほかの人へ通知する。記録に失敗したらLEDを戻す。
   // 押している途中で中断されたとき（done=false：pointercancel など）は、何も起こさない（LEDも消えない）。
   function release(done){
@@ -675,7 +693,7 @@ body{
   };
   var PUSH_API="https://tango-push.eisas12m08y.workers.dev";
   var VAPID_PUBLIC_KEY="BH9EL0PjbYENYjVQn-NYIaHnQwkW1EPS9qhyK3rCNPWKHzIr3DLmUGbw7KpdYEWtG0ora_qxW09EkXZLP19T8js";
-  var TOPIC="button-all";                  // このアプリを使っている人みんなで1つの宛先
+  // （宛先 topic は使わない：通知は Worker の /pair/* が二人組の相手にだけ送る）
   var DEVICE_ID_KEY="button_device_id",NOTIFY_OFF_KEY="button_notify_off";
   var PRESS_TEXT="誰かがボタンを押しました";
 
@@ -724,15 +742,13 @@ body{
     }).catch(function(e){regP=null;throw e})}
     return regP;
   }
-  // 端末のプッシュ購読を作って、サーバーにこの宛先(TOPIC)として登録する
+  // 端末のプッシュ購読を作って返す（サーバーへの登録は /pair/join が行う）
   function subscribe(){
     return getReg().then(function(reg){
       return reg.pushManager.getSubscription().then(function(sub){
         return sub||reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64(VAPID_PUBLIC_KEY)});
       });
-    }).then(function(sub){
-      return pushPost("/subscribe",{topic:TOPIC,deviceId:deviceId(),subscription:sub.toJSON()});
-    }).then(function(r){return r.ok});
+    }).then(function(sub){return sub.toJSON()});
   }
 
   // 通知スイッチ（ベル）
@@ -750,28 +766,75 @@ body{
   function notifyOff(){try{return localStorage.getItem(NOTIFY_OFF_KEY)==="1"}catch(e){return false}}
   function setNotifyOff(v){try{if(v)localStorage.setItem(NOTIFY_OFF_KEY,"1");else localStorage.removeItem(NOTIFY_OFF_KEY)}catch(e){}}
 
+  // ===== 「みんなで」と「だれかと」 =====
+  // みんなで … 全員が同じ部屋。通知なし。1日1回。
+  // だれかと … ランダムに二人一組。1日3回。押すたびに相手へ通知。組み合わせはサーバー（Worker）が決める。
+  var md=document.getElementById("md"),pairState="none",pairPid=null,pairTimer=0,modeBusy=false,armedAt=0;
+  function saveMode(m){mode=m;try{localStorage.setItem(MODE_KEY,m)}catch(e){}}
+  function lamp(){
+    md.classList.toggle("on",mode==="pair"&&pairState==="paired");
+    md.classList.toggle("wait",mode==="pair"&&pairState!=="paired");
+    md.setAttribute("aria-pressed",mode==="pair"?"true":"false");
+    md.setAttribute("aria-label",mode==="pair"?(pairState==="paired"?"だれかと（相手が決まっています）":"だれかと（相手を探しています）"):"みんなで");
+  }
+  function pairCall(path,extra){
+    var p={deviceId:deviceId()};if(extra)for(var k in extra)p[k]=extra[k];
+    return pushPost(path,p).then(function(r){if(!r.ok)throw new Error("pair "+r.status);return r.json()});
+  }
+  // サーバーの返事（state: none/waiting/paired、pid: 組み合わせの印）を画面に反映する。quiet のときは何も言わない。
+  function applyPair(r,quiet){
+    var was=pairState,wasPid=pairPid;
+    pairState=r.state;pairPid=r.pid||null;lamp();
+    if(quiet)return;
+    if(pairState==="paired"&&(was!=="paired"||wasPid!==pairPid))say(was==="paired"?"新しい相手が決まりました":"相手が決まりました");
+    else if(pairState==="waiting"&&was==="paired")say("相手がいなくなりました。新しい相手を探しています");
+  }
+  function pollPair(quiet){
+    if(mode!=="pair")return Promise.resolve();
+    return pairCall("/pair/status").then(function(r){
+      if(mode!=="pair")return;
+      if(r.state==="none"){ // サーバー側の記録が消えていたら入り直す
+        return subscribe().then(function(sub){return pairCall("/pair/join",{subscription:sub})}).then(function(r2){if(mode==="pair")applyPair(r2,quiet)});
+      }
+      applyPair(r,quiet);
+    }).catch(function(e){dbg("ペアの確認",e)});
+  }
+  function startPoll(){clearInterval(pairTimer);pairTimer=setInterval(function(){if(!document.hidden)pollPair(false)},30000)}
+  function stopPoll(){clearInterval(pairTimer);pairTimer=0}
+  document.addEventListener("visibilitychange",function(){if(!document.hidden&&mode==="pair")pollPair(false)});
+
+  function enterPair(){
+    if(!pushOK()){say("この端末・ブラウザでは通知を使えません。iPhone は「ホーム画面に追加」してから開いてください。");return}
+    modeBusy=true;
+    var ask=Notification.permission==="granted"?Promise.resolve("granted"):Notification.requestPermission();
+    ask.then(function(p){
+      if(p!=="granted"){say("通知を許可すると「だれかと」を使えます");throw 0}
+      return subscribe();
+    }).then(function(sub){return pairCall("/pair/join",{subscription:sub})}).then(function(r){
+      saveMode("pair");try{localStorage.removeItem(PENDING_KEY)}catch(e){}
+      notifyOn=true;setBell(true);buildLeds();applyPair(r,true);startPoll();
+      say(r.state==="paired"?"だれかと：相手が決まりました":"だれかと：相手を探しています");
+    }).catch(function(e){if(e!==0){dbg("だれかと",e);say("切り替えられませんでした")}}).then(function(){modeBusy=false});
+  }
+  function leavePair(){
+    saveMode("crowd");stopPoll();pairState="none";pairPid=null;notifyOn=false;setBell(false);buildLeds();lamp();
+    try{localStorage.setItem(PENDING_KEY,"1")}catch(e){}
+    pairCall("/pair/leave").then(function(){try{localStorage.removeItem(PENDING_KEY)}catch(e){}}).catch(function(e){dbg("だれかとをやめる",e)});
+    say("みんなで");
+  }
+  // モードの切り替えボタン（白いボタンの左）。相手が決まっているときは、間違って押さないよう3秒以内にもう一度押したときだけ解除する。
+  md.addEventListener("click",function(){
+    if(modeBusy)return;
+    if(mode!=="pair"){enterPair();return}
+    if(pairState==="paired"&&Date.now()-armedAt>3000){armedAt=Date.now();say("もう一度押すと、今の相手とのペアを解除して「みんなで」に戻ります");return}
+    armedAt=0;leavePair();
+  });
+  // 設定の「通知」スイッチ：通知は「だれかと」のときだけ使う。オフにすると「みんなで」に戻る。
   var lastToggle=0;
   function toggleNotify(){
     var t=Date.now();if(t-lastToggle<400)return;lastToggle=t;
-    if(!pushOK()){say("この端末・ブラウザでは通知を使えません。iPhone は「ホーム画面に追加」してから開いてください。");return}
-    if(notifyOn){
-      notifyOn=false;setNotifyOff(true);setBell(false);
-      pushPost("/unsubscribe",{topic:TOPIC,deviceId:deviceId()}).catch(function(){});
-      say("通知をオフにしました");return;
-    }
-    // スイッチは先にオンにして、通信（購読）は裏で行う。失敗したらオフに戻す。
-    function turnOn(){
-      notifyOn=true;setNotifyOff(false);setBell(true);
-      subscribe().then(function(ok){
-        if(!notifyOn){pushPost("/unsubscribe",{topic:TOPIC,deviceId:deviceId()}).catch(function(){});return} // 待っている間にオフにされた
-        say(ok?"通知をオンにしました。アプリを閉じていても届きます。":"通知をオンにしました。このタブを開いたままにしてください。");
-      }).catch(function(){notifyOn=false;setBell(false);say("通知を設定できませんでした")});
-    }
-    if(Notification.permission==="granted"){turnOn();return}
-    Notification.requestPermission().then(function(p){
-      if(p!=="granted"){setBell(false);say("通知が許可されませんでした。ブラウザの設定から変更できます。",true);return}
-      turnOn();
-    }).catch(function(){say("通知を設定できませんでした")});
+    if(mode==="pair"&&!modeBusy){leavePair();say("通知をオフにしたので「みんなで」に戻りました");return}
+    say("通知は「だれかと」のときだけ使えます。白いボタンの左のボタンで切り替えられます。");
   }
   // 黒いボタン → 設定画面
   var settingsEl=document.getElementById("settings"),notifySw=document.getElementById("notifySw");
@@ -912,17 +975,27 @@ body{
       .catch(function(e){dbg("審査",e);btns.forEach(function(b){b.disabled=false});say("操作に失敗しました")});
   }
   setBell(false);
-  if(pushOK()&&Notification.permission==="granted"&&!notifyOff()){
-    notifyOn=true;setBell(true);
-    subscribe().catch(function(){});
+  if(mode==="pair"){
+    if(pushOK()&&Notification.permission==="granted"){
+      notifyOn=true;setBell(true);lamp();
+      subscribe().then(function(sub){return pairCall("/pair/join",{subscription:sub})}).then(function(r){applyPair(r,true)}).catch(function(e){dbg("だれかと",e)});
+      startPoll();
+    }else{ // 通知の許可が外れていたら「みんなで」に戻す
+      saveMode("crowd");buildLeds();try{localStorage.setItem(PENDING_KEY,"1")}catch(e){}
+    }
   }
+  if(mode==="crowd"){ // 前回「みんなで」に戻したときの解除が届いていなかったら、もう一度送る
+    var pend=false;try{pend=localStorage.getItem(PENDING_KEY)==="1"}catch(e){}
+    if(pend)pairCall("/pair/leave").then(function(){try{localStorage.removeItem(PENDING_KEY)}catch(e){}}).catch(function(){});
+  }
+  lamp();
 
   // 赤いボタンを離したとき（release() から呼ぶ）。結果（true=数えてよい / false=記録に失敗）を Promise で返す。
   //  ・記録 … Firebase の pressCounts/<日付(JST)>/<5分ごとの区間> を +1 する。時刻の細かい値や端末IDは残さない（データを軽くするため）。
   //    ログイン失敗や権限エラーなど、はっきり失敗したときだけ false。8秒たっても返事がないとき（圏外など）は、数えたままにする（true）。
   //  ・通知 … Web Push（Cloudflare Worker）。記録が成功したとき（または Firebase を使えないとき）だけ送る。
   function announce(){
-    function notify(){try{pushPost("/notify",{topic:TOPIC,deviceId:deviceId(),sender:"ボタン",preview:PRESS_TEXT}).catch(function(){})}catch(e){}}
+    function notify(){if(mode!=="pair")return;try{pairCall("/pair/notify").then(function(r){applyPair(r,false)}).catch(function(e){dbg("相手への通知",e)})}catch(e){}}
     if(!db){notify();return Promise.resolve(true)}
     var dk=themeKey(0),now=Date.now()+serverOff;
     var b=Math.max(0,Math.min(287,Math.floor((now-jstDayStart(now))/BUCKET)));
