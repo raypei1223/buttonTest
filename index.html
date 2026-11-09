@@ -1254,7 +1254,7 @@ body{
     return list[d[day%n]];
   }
   function escSvg(t){return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
-  function renderTheme(text,key,err){
+  function renderTheme(text,key,err,label,corner){ // label / corner: 左上・右上の小さい文字（省略すると THEME と日付）
     var W=320,H=84,maxW=W-32,body;
     var c1=err?"#ffa628":"#2ee06a",c2=err?"#ffe2b0":"#c8ffd8";
     if(err)text="テーマを読み込めませんでした";
@@ -1265,15 +1265,21 @@ body{
       var size=Math.min(30,Math.max(12,maxW/Math.max(units,1))),fit=units*size>maxW?' textLength="'+maxW+'" lengthAdjust="spacingAndGlyphs"':'';
       var tx='<text text-anchor="middle" x="'+(W/2)+'" y="'+(H/2+size*.36+2)+'" font-size="'+size.toFixed(1)+'" font-weight="700" font-family="system-ui,\'Hiragino Sans\',\'Yu Gothic\',\'Noto Sans JP\',sans-serif"'+fit+'>'+escSvg(text)+'</text>';
       body=tx.replace('<text ','<text fill="'+c1+'" filter="url(#tg)" ')+tx.replace('<text ','<text fill="'+c2+'" ')
-        +'<text class="t'+(err?' e':'')+'" x="12" y="14">'+(err?'ERROR':'THEME')+'</text><text class="t'+(err?' e':'')+'" text-anchor="end" x="'+(W-12)+'" y="14">'+escSvg(key.slice(5).replace("-","/"))+'</text>';
+        +'<text class="t'+(err?' e':'')+'" x="12" y="14">'+(err?'ERROR':(label||'THEME'))+'</text><text class="t'+(err?' e':'')+'" text-anchor="end" x="'+(W-12)+'" y="14">'+escSvg(corner!==undefined?corner:key.slice(5).replace("-","/"))+'</text>';
     }
     chartEl.innerHTML='<svg viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">'
       +'<defs><filter id="tg" x="-20%" y="-60%" width="140%" height="220%"><feGaussianBlur stdDeviation="3.2"/></filter>'
       +'<pattern id="sl" width="4" height="3" patternUnits="userSpaceOnUse"><rect width="4" height="1" y="2" fill="#000" opacity=".22"/></pattern></defs>'
       +'<g class="c">'+body+'</g><rect width="'+W+'" height="'+H+'" fill="url(#sl)"/></svg>';
   }
+  // 「だれかと」のあいだは、テーマの代わりにペアの状態を映す（ペアが決まっていれば「ペアが決まっています」）
+  function pairScreen(){
+    var paired=(pairState==="paired");
+    renderTheme(paired?"ペアが決まっています":"相手を探しています",themeKey(0),false,"PAIR",paired?"2/2":"1/2");
+  }
   function showTheme(){
     themeOn=true;var key=themeKey(0);
+    if(mode==="pair"){pairScreen();lightOn("theme");return}
     if(themeCache&&themeCache.key===key)renderTheme(themeCache.text,key);
     else{
       renderTheme(null,key);
