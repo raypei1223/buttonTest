@@ -592,6 +592,7 @@ body{
   }
   function refreshDay(){if(ledKind!==ledKindNow()){buildLeds();return}var l=LED_COUNT-usedToday();if(l!==left){left=l;syncLeds()}}
   function dropLed(){if(left<=0)return;left--;saveUsed(LED_COUNT-left);leds[left].classList.remove("on");showLeds()}
+  function useUp(){left=0;saveUsed(LED_COUNT);syncLeds()} // Worker から「今日の分は使い切り」と言われたとき、端末のLEDも全部消す
   function giveBackLed(day,kind){if(kind!==ledKind||today()!==day||left>=LED_COUNT)return false;leds[left].classList.add("on");left++;saveUsed(LED_COUNT-left);showLeds();return true}
   buildLeds();
 
@@ -599,7 +600,7 @@ body{
   function holdDown(el){el._t0=performance.now();clearTimeout(el._ut);el.classList.add("down")}
   function holdUp(el){var w=90-(performance.now()-el._t0);if(w>0){el._ut=setTimeout(function(){el.classList.remove("down")},w)}else{el.classList.remove("down")}}
   // 押し込んだ瞬間：ボタンが沈み、クリック音と振動が出る。LED・点・通知は、まだ変わらない。
-  function press(){if(pressed)return;refreshDay();if(left<=0){say("今日はもう押せません",true);return}pressed=true;holdDown(btn);click(true);buzz(14)}
+  function press(){if(pressed)return;refreshDay();if(left<=0&&!isAdmin){say("今日はもう押せません",true);return}pressed=true;holdDown(btn);click(true);buzz(14)}
   // 離した瞬間（done=true）：LEDが1つ消え、点を記録して、ほかの人へ通知する。記録に失敗したらLEDを戻す。
   // 押している途中で中断されたとき（done=false：pointercancel など）は、何も起こさない（LEDも消えない）。
   function release(done){
@@ -607,9 +608,17 @@ body{
     if(!done)return;
     autoNotifyOn(); // 通知が許可されているのに通知オフのままなら、自動でオンにする
     refreshDay(); // 押している間に別の画面で押された・日付が変わった、に備えて数え直す
-    if(left<=0){say("今日はもう押せません",true);return}
-    var day=today(),kind=ledKind;dropLed();
-    announce().then(function(ok){if(!ok){var back=giveBackLed(day,kind);say(back?"記録できませんでした。もう一度押せます":"記録できませんでした",true)}});
+    var adm=isAdmin; // 管理者は回数の制限なし（LEDも減らさない）
+    if(left<=0&&!adm){say("今日はもう押せません",true);return}
+    var day=today(),kind=ledKind;if(!adm)dropLed();
+    announce().then(function(res){
+      if(res.ok)return;
+      if(res.limited&&res.reason==="day"){useUp();say("今日はもう押せません",true);return} // Worker の数えでは、今日の分は使い切っている
+      var back=adm?false:giveBackLed(day,kind);
+      if(res.limited)say("今日は、この回線からの上限に達しました",true);
+      else if(res.busy)say("少し待ってからもう一度押してください",true);
+      else say(back?"記録できませんでした。もう一度押せます":"記録できませんでした",true);
+    });
   }
 
   btn.addEventListener("pointerdown",function(e){
@@ -685,7 +694,7 @@ body{
   // ===== 通信（Firebase）と通知 =====
   // 赤いボタン(#btn)を押すたびに、このアプリを使っているほかの人へ通知する。
   //  ・アプリを閉じている人 … Web Push（たんご帳と同じ Cloudflare Worker 経由）
-  //  ・通知は Web Push のみ。Firebase は赤ボタンを押した記録（白ボタンのグラフ用）に使う
+  //  ・通知は Web Push のみ。赤ボタンを押した記録（白ボタンのグラフ用）は Worker が数えて持つ。Firebase は管理者・テーマ・日付のずれ用
   var firebaseConfig={
     apiKey:"AIzaSyDlvbWSmTbHk6ObYZqCpXP9S0XnpmAvJJA",
     authDomain:"button-88c55.firebaseapp.com",
@@ -784,7 +793,16 @@ body{
   }
   function pairCall(path,extra){
     var p={deviceId:deviceId()};if(extra)for(var k in extra)p[k]=extra[k];
-    return pushPost(path,p).then(function(r){if(!r.ok)throw new Error("pair "+r.status);return r.json()});
+    return pushPost(path,p).then(function(r){if(!r.ok){var e=new Error("pair "+r.status);e.status=r.status;throw e}return r.json()});
+  }
+  // 管理者のときだけ、Firebase のログイン証明を添える。Worker が管理者かどうかを確かめて、回数や間隔の制限を外す。
+  function pairCallAdmin(path,extra){
+    if(!isAdmin||!auth||!auth.currentUser)return pairCall(path,extra);
+    return auth.currentUser.getIdToken().then(function(t){return t},function(){return null}).then(function(t){
+      var x={};if(extra)for(var k in extra)x[k]=extra[k];
+      if(t)x.idToken=t;
+      return pairCall(path,x);
+    });
   }
   // サーバーの返事（state: none/waiting/paired、pid: 組み合わせの印）を画面に反映する。quiet のときは何も言わない。
   function applyPair(r,quiet){
@@ -1023,6 +1041,7 @@ body{
       .catch(function(e){dbg("審査",e);btns.forEach(function(b){b.disabled=false});say("操作に失敗しました")});
   }
   setBell(false);
+  checkAdmin(); // 管理者なら、起動時から回数制限なしにする
   if(mode==="pair"){ // 通知が使えなくても「だれかと」のまま入り直す（通知なし）
     lamp();
     joinPair(false).then(function(r){if(r)applyPair(r,true)}).catch(function(e){dbg("だれかと",e)});
@@ -1034,26 +1053,26 @@ body{
   }
   lamp();
 
-  // 赤いボタンを離したとき（release() から呼ぶ）。結果（true=数えてよい / false=記録に失敗）を Promise で返す。
-  //  ・記録 … Firebase の pressCounts/<日付(JST)>/<5分ごとの区間> を +1 する。時刻の細かい値や端末IDは残さない（データを軽くするため）。
-  //    ログイン失敗や権限エラーなど、はっきり失敗したときだけ false。8秒たっても返事がないとき（圏外など）は、数えたままにする（true）。
-  //  ・通知 … Web Push（Cloudflare Worker）。記録が成功したとき（または Firebase を使えないとき）だけ送る。
+  // 赤いボタンを離したとき（release() から呼ぶ）。結果 {ok, limited, reason, busy} を Promise で返す。
+  //  ・記録も通知も Worker（/pair/notify または /pair/crowd）が行う。1日の回数・IPごとの上限・管理者の確認も Worker が決める。
+  //  ・Worker が「今日はもう上限」と答えたら limited。回線のつながり具合などで失敗したときは ok=false（LEDを戻す）。
+  //  ・画面には、返事が来るまで自分の分を「未確定」として足しておく（unacked）。
   function announce(){
-    function notify(){if(mode!=="pair"||pairState!=="paired")return;try{pairCall("/pair/notify").then(function(r){applyPair(r,false)}).catch(function(e){dbg("相手への通知",e)})}catch(e){}}
-    if(!db){notify();return Promise.resolve(true)}
-    var dk=themeKey(0),src=graphSrc(),path=graphPath(dk),now=Date.now()+serverOff;
-    if(!path){notify();return Promise.resolve(true)} // 「だれかと」でペアの印がないとき：点は打たず、通知だけ送る
+    var paired=(mode==="pair"&&pairState==="paired");
+    var dk=themeKey(0),src=graphSrc(),now=Date.now()+serverOff;
     var b=Math.max(0,Math.min(287,Math.floor((now-jstDayStart(now))/BUCKET)));
     if(countsDay!==dk||countsSrc!==src){counts={};unacked={};countsDay=dk;countsSrc=src}
-    unacked[b]=(unacked[b]||0)+1; // 書き込みの返事が来るまでは、自分の分を「未確定」として画面に足しておく
+    unacked[b]=(unacked[b]||0)+1;
     function settle(ok){if(countsDay===dk&&countsSrc===src){unacked[b]=Math.max(0,(unacked[b]||0)-1);if(ok)counts[b]=(counts[b]||0)+1}}
-    try{
-      var write=ensureAuth().then(function(){return db.ref(path+"/"+pad3(b)).set(firebase.database.ServerValue.increment(1))}).then(function(){return true});
-      var slow=new Promise(function(res){setTimeout(function(){res(true)},8000)});
-      return Promise.race([write,slow]).then(function(){settle(true);notify();return true}).catch(function(e){
-        dbg("押した記録の書き込み",e);settle(false);return false;
-      });
-    }catch(e){dbg("押した記録の書き込み",e);settle(false);return Promise.resolve(false)}
+    return pairCallAdmin(paired?"/pair/notify":"/pair/crowd").then(function(r){
+      if(paired&&r&&r.state)applyPair(r,false); // 相手がいなくなっていたら、ここで状態が変わる
+      var ok=paired?!!(r&&r.recorded):!!(r&&r.ok);
+      settle(ok);
+      return {ok:ok,limited:!!(r&&r.limited),reason:(r&&r.reason)||null,busy:false};
+    }).catch(function(e){
+      dbg("押した記録の送信",e);settle(false);
+      return {ok:false,limited:false,reason:null,busy:!!(e&&e.status===429)};
+    });
   }
   function clearNotes(){
     if(!notifyOn)return;
@@ -1066,23 +1085,17 @@ body{
   if(db){try{db.ref(".info/serverTimeOffset").on("value",function(sn){serverOff=sn.val()||0})}catch(e){}}
   function pad3(n){return("00"+n).slice(-3)}
   function jstDayStart(now){return Math.floor((now+32400000)/86400000)*86400000-32400000} // 日本時間のその日の0時（ミリ秒）
-  // グラフの点の出どころ。「だれかと」でペアが決まっている間は、その2人組だけの記録（pairCounts/<pid>/<日付>）。それ以外は全員の記録（pressCounts/<日付>）。
-  // 「だれかと」でペアが決まっている間に押した分は、みんなでの記録（pressCounts）には書かない（相手を探している間に押した分は、みんなでと同じ扱い）。pid は Firebase のキーに使えない文字（. $ # [ ] /）を _ に置き換える。
+  // グラフの点の出どころ。「だれかと」でペアが決まっている間は、その2人組だけの記録。それ以外は全員の記録（みんなで）。
+  // 「だれかと」でペアが決まっている間に押した分は、みんなでの記録には入らない（相手を探している間に押した分は、みんなでと同じ扱い）。
   var countsSrc="";
   function pairKey(){if(pairPid===null||pairPid===undefined)return null;var k=String(pairPid).replace(/[.$#\[\]\/]/g,"_").slice(0,64);return k||null}
   function graphSrc(){return(mode==="pair"&&pairState==="paired")?"pair:"+(pairKey()||""):"crowd"}
-  function graphPath(dk){
-    if(mode==="pair"&&pairState==="paired"){var k=pairKey();return k?"pairCounts/"+k+"/"+dk:null} // ペアが決まっているのに印がないときは、どこにも書かない・読まない（みんなでの記録には混ぜない）
-    return "pressCounts/"+dk;
-  }
-  // 今日の分（5分ごとの押された回数）だけを読む。1日あたり最大288件の小さな数字なので軽い。
+  // 今日の分（5分ごとの押された回数）を Worker から読む。1日あたり最大288件の小さな数字なので軽い。
   function loadPresses(){
-    if(!db)return Promise.resolve();
-    var dk=themeKey(0),src=graphSrc(),path=graphPath(dk);
-    if(!path){if(countsDay!==dk||countsSrc!==src)unacked={};counts={};countsDay=dk;countsSrc=src;return Promise.resolve()}
-    return ensureAuth().then(function(){return db.ref(path).once("value")}).then(function(sn){
-      var c={};
-      sn.forEach(function(ch){var v=ch.val(),b=parseInt(ch.key,10);if(typeof v==="number"&&v>0&&b>=0&&b<288)c[b]=v});
+    var dk=themeKey(0),src=graphSrc(),paired=(mode==="pair"&&pairState==="paired");
+    return pairCall("/pair/counts",{scope:paired?"pair":"crowd"}).then(function(r){
+      var c={},bb=(r&&r.b)||{};
+      Object.keys(bb).forEach(function(k){var v=bb[k],i=parseInt(k,10);if(typeof v==="number"&&v>0&&i>=0&&i<288)c[i]=v});
       if(countsDay!==dk||countsSrc!==src)unacked={};
       counts=c;countsDay=dk;countsSrc=src;
     }).catch(function(e){dbg("押した記録の読み込み",e)});
