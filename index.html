@@ -987,18 +987,25 @@ body{
     // 今の時刻を表す細い縦線（点より下に描く）
     var nx=L+Math.min(1,Math.max(0,(now-t0)/SPAN))*pw;
     svg+='<line class="now" x1="'+nx.toFixed(1)+'" x2="'+nx.toFixed(1)+'" y1="'+T+'" y2="'+(T+ph)+'"/>';
-    // 点：最初の1個（その日いちばん早い点）は縦の真ん中。2個目以降は、各点ごとに乱数（キー由来なので毎回同じ位置）で候補を出し、
-    //     すでにある点から一番離れた位置を選ぶ（なるべく重ならないように）
-    var placed=[],yMin=T+4,yMax=T+ph-4,dots='';
+    // 点：基本は縦の真ん中。すでにある点と重なりそうなときだけ、乱数（キー由来なので毎回同じ位置）で縦にずらして、重ならない位置を選ぶ。
+    var placed=[],yMin=T+4,yMax=T+ph-4,yMid=(yMin+yMax)/2,GAP=9,dots=''; // GAP: これより近いと「重なりそう」（点の半径4.2の2個分＋少し）
+    function nearest(x,y){ // いちばん近い既存の点までの距離（x は左から右へ並ぶので、離れたら打ち切れる）
+      var score=1e9;
+      for(var i=placed.length-1;i>=0;i--){
+        var q=placed[i],dx=x-q.x;if(dx>GAP)break;
+        var dd=Math.sqrt(dx*dx+(y-q.y)*(y-q.y));if(dd<score)score=dd;
+      }
+      return score;
+    }
     list.forEach(function(p){
-      var x=L+(p.t-t0)/SPAN*pw,rnd=seeded(hashKey(p.k)),best=placed.length?yMin+rnd()*(yMax-yMin):(yMin+yMax)/2,bestScore=-1;
-      for(var c=0;placed.length&&c<16;c++){
-        var y=yMin+rnd()*(yMax-yMin),score=1e9;
-        for(var i=placed.length-1;i>=0;i--){
-          var q=placed[i],dx=x-q.x;if(dx>30)break;
-          var dd=Math.sqrt(dx*dx+(y-q.y)*(y-q.y));if(dd<score)score=dd;
+      var x=L+(p.t-t0)/SPAN*pw,best=yMid;
+      if(nearest(x,yMid)<GAP){
+        var rnd=seeded(hashKey(p.k)),bestScore=-1,found=false;
+        for(var c=0;c<24;c++){
+          var y=yMin+rnd()*(yMax-yMin),score=nearest(x,y);
+          if(score>=GAP){best=y;found=true;break} // 重ならない位置が見つかったらそこにする
+          if(score>bestScore){bestScore=score;best=y}
         }
-        if(score>bestScore){bestScore=score;best=y}
       }
       placed.push({x:x,y:best});
       dots+='<circle cx="'+x.toFixed(1)+'" cy="'+best.toFixed(1)+'" r="4.2" fill="url(#dg)"/>';
