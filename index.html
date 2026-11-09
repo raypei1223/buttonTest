@@ -915,10 +915,10 @@ body{
   var settingsOpenedAt=0;
   function openSettings(){settingsEl.hidden=false;settingsOpenedAt=Date.now();try{notifySw.focus()}catch(e){}checkAdmin()}
   function closeSettings(){settingsEl.hidden=true;gateEl.hidden=true;adminPass.value="";try{gm.focus()}catch(e){}}
-  // 黒いボタン：閉じているときは開く。開いてから2秒たったあとにもう一度押すと閉じる（2秒以内は何もしない）。
+  // 黒いボタン：閉じているときは開く。開いているときにもう一度押すと、すぐに閉じる。
   function toggleSettings(){
     if(settingsEl.hidden)openSettings();
-    else if(Date.now()-settingsOpenedAt>=2000)closeSettings();
+    else closeSettings();
   }
   gm.addEventListener("click",toggleSettings);
   gm.addEventListener("keyup",function(e){if(e.key===" "||e.key==="Enter")toggleSettings()});
