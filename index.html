@@ -11,6 +11,7 @@
 <meta name="apple-mobile-web-app-title" content="ボタン">
 <meta name="theme-color" content="#c8cac4">
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-check-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
 <style>
@@ -714,7 +715,7 @@ body{
   var db=null,auth=null,TS=null;
   // 通信に失敗したとき、原因（エラーコード）をコンソールに出す。画面の動きには影響しない。
   function dbg(where,e){try{console.warn("[button] "+where+"に失敗:",(e&&e.code)||"",(e&&e.message)||e)}catch(x){}}
-  try{firebase.initializeApp(firebaseConfig);auth=firebase.auth();db=firebase.database();TS=firebase.database.ServerValue.TIMESTAMP}catch(e){}
+  try{firebase.initializeApp(firebaseConfig);try{firebase.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider("6Lcq6BguAAAAAE8U8Py4Antjgb8SO4OZ44tyocmf"),true)}catch(e){dbg("App Check",e)}auth=firebase.auth();db=firebase.database();TS=firebase.database.ServerValue.TIMESTAMP}catch(e){}
 
   function deviceId(){
     try{
@@ -991,7 +992,7 @@ body{
   function checkAdmin(){
     if(!db)return;
     ensureAuth().then(function(u){return db.ref("admins/"+u.uid).once("value")})
-      .then(function(sn){setAdmin(sn.val()===true)}).catch(function(e){dbg("管理者の確認",e)});
+      .then(function(sn){setAdmin(sn.val()===true)}).catch(function(e){if(e&&e.code==="PERMISSION_DENIED"){setAdmin(false);return}dbg("管理者の確認",e)});
   }
 
   // --- パスコード認証：パスコードを Firebase に送り、ルールが adminSecret と照合する ---
@@ -1017,7 +1018,7 @@ body{
   adminGo.addEventListener("click",adminLogin);
   adminPass.addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.isComposing){e.preventDefault();adminLogin()}});
   adminOut.addEventListener("click",function(){
-    ensureAuth().then(function(u){return db.ref("admins/"+u.uid).remove()})
+    ensureAuth().then(function(u){return db.ref("admins/"+u.uid).remove().then(function(){return db.ref("adminLogin/"+u.uid).remove()})})
       .then(function(){setAdmin(false);say("管理者をやめました")}).catch(function(e){dbg("管理者をやめる",e);say("操作に失敗しました")});
   });
 
