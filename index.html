@@ -187,10 +187,11 @@ body{
     radial-gradient(ellipse at 38% 30%,var(--rb-wear),rgba(255,255,255,0) 62%),
     linear-gradient(160deg,var(--rb-top-a),var(--rb-top-b));
   box-shadow:inset 0 1px 0 var(--rb-edge),inset 0 0 0 1px rgba(90,80,55,.18),inset 0 calc(var(--s)*-.008) calc(var(--s)*.012) rgba(95,85,60,.22);
-  transition:transform .09s ease-out;
+  transition:transform .09s ease-out,filter .09s ease-out,box-shadow .09s ease-out;
 }
-.rb.down::before{transform:translateY(calc(var(--s)*.022));box-shadow:0 1px 2px rgba(0,0,0,.4)}
-.rb.down .rbcap{transform:translateY(calc(var(--s)*.022));transition-duration:.04s}
+/* 押し込み：出っ張りの高さ(.03)ぶんだけ沈んで、机の面と同じ高さになる（穴に落ちたようには見せない）。キャップはごくわずかに暗くなる */
+.rb.down::before{transform:translateY(calc(var(--s)*.03));background:linear-gradient(#5e5748,#3f3a2f);box-shadow:none}
+.rb.down .rbcap{transform:translateY(calc(var(--s)*.03));filter:brightness(.95);transition-duration:.04s}
 .rb:focus-visible{outline:3px solid var(--cap-hi);outline-offset:6px}
 /* 小さな黒いゴムのボタン：丸く盛り上がったドームを押すと、ふにゃっと潰れる */
 .gm{
