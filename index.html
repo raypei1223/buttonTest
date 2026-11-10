@@ -1516,8 +1516,8 @@ body{
       tNext=document.getElementById("tnext"),stageEl=document.querySelector(".stage");
   var TOUR=[
     {ids:["btn"],sel:".well",pad:12,leds:true,lines:function(){return[{t:"１日に１度だけ押せる"},{t:"残り数＝光っているLED"}]}},
-    {ids:["sq"],screen:"chart",lines:function(){return[{t:"他の人の押したタイミングを見る"}]}},
-    {ids:["rb"],screen:"theme",lines:function(){return[{t:"今日のテーマを見る"}]}},
+    {ids:["sq"],pad:16,screen:"chart",lines:function(){return[{t:"他の人の押したタイミングを見る"}]}},
+    {ids:["rb"],pad:16,screen:"theme",lines:function(){return[{t:"今日のテーマを見る"}]}},
     {ids:["md"],lines:function(){var p=(mode==="pair");return[
       {t:"モード切替え",c:"tt"},
       {t:"みんなで：最大100人のグループ。\nテーマに沿って押してもよし、\n押さなくてもよし",c:p?"":"cur"},
