@@ -1608,8 +1608,9 @@ body{
   document.addEventListener("keydown",function(e){if(e.key==="Escape"&&tourOn)tourEnd()});
   window.addEventListener("resize",function(){if(!tourOn)return;clearTimeout(tourRz);tourRz=setTimeout(function(){if(tourOn)tourShow(tourI)},150)});
   document.getElementById("tourBtn").addEventListener("click",tourStart);
-  (function(){var go=function(){setTimeout(function(){if(!tourSeen())tourStart()},300)};
-    if(document.readyState==="complete")go();else window.addEventListener("load",go)})();
+  // 初めて開いたときは、読み込みの完了を待たず、スクリプトが動いた時点で操作をロックして案内を始める（案内が出るまでの間にボタンを押せないように）
+  if(!tourSeen())tourStart();
+  window.addEventListener("load",function(){if(tourOn&&tourI===0)tourShow(0)}); // 読み込みで見た目の大きさが変わったときのために、最初の案内の位置だけ測り直す
 
   renderChart(); // 消灯したガラスの画面を、最初から机に置いておく
   document.addEventListener("visibilitychange",function(){if(!document.hidden)clearNotes()});
