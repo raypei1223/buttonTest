@@ -337,6 +337,7 @@ body{
 <div class="settings" id="settings" hidden>
   <div class="spanel" role="dialog" aria-modal="false" aria-labelledby="stitle">
     <div class="shead"><h2 id="stitle">設定</h2><button class="sclose" id="sclose" type="button" aria-label="閉じる">✕</button></div>
+    <div class="srow"><span class="slabel" id="slabelSnd">音</span><button class="sw" id="soundSw" type="button" role="switch" aria-checked="true" aria-labelledby="slabelSnd"><span class="knob"></span></button></div>
     <div class="srow"><span class="slabel" id="slabel">通知</span><button class="sw" id="notifySw" type="button" role="switch" aria-checked="false" aria-labelledby="slabel"><span class="knob"></span></button></div>
     <div class="ssec">
       <h3>テーマ応募</h3>
@@ -356,6 +357,10 @@ body{
 <script>
 (function(){
   var ctx=null,noise=null;
+  // 設定の「音」スイッチ。オフのときは AudioContext を作らない・使わないので、ほかのアプリの音楽などを止めない。
+  var SOUND_OFF_KEY="button_sound_off";
+  var soundOn=true;try{if(localStorage.getItem(SOUND_OFF_KEY)==="1")soundOn=false}catch(e){}
+  var stale=false; // true のあいだは、次に指を離したとき（ユーザー操作の中）に、音の仕組みを作り直す
   var samples={};
   function loadSamples(){
     var src=window.__BTN_SND;if(!src)return;
@@ -368,6 +373,7 @@ body{
     });
   }
   function audio(){
+    if(!soundOn)return null;
     if(ctx&&ctx.state==="closed")ctx=null;
     if(!ctx){
       var AC=window.AudioContext||window.webkitAudioContext;
@@ -380,14 +386,34 @@ body{
       var d=noise.getChannelData(0);
       for(var i=0;i<len;i++)d[i]=Math.random()*2-1;
       if(!Object.keys(samples).length)loadSamples();
+      var me=ctx;
       ctx.onstatechange=function(){
-        if(ctx&&ctx.state==="running"){if(typeof humResumeIfHeld==="function")humResumeIfHeld()}
-        else if(ctx&&ctx.state!=="running"&&hum){try{hum.nodes.forEach(function(o){try{o.stop()}catch(e){}})}catch(e){}hum=null}
+        if(ctx!==me)return; // 作り直す前の古いContextからの通知は無視する
+        if(ctx.state==="running"){if(typeof humResumeIfHeld==="function")humResumeIfHeld()}
+        else{
+          if(ctx.state!=="closed")stale=true; // 割り込まれて止まったあとは、次の操作で作り直す
+          if(hum){try{hum.nodes.forEach(function(o){try{o.stop()}catch(e){}})}catch(e){}hum=null}
+        }
       };
     }
     // iOSはバックグラウンド復帰後に "interrupted" になるので、running以外はすべてresume
     if(ctx.state!=="running"){try{var pr=ctx.resume();if(pr&&pr.catch)pr.catch(function(){})}catch(e){}}
     return ctx;
+  }
+  // 音のオン・オフ。オフにすると、鳴っている音を止め、AudioContext を閉じて、ほかのアプリの再生に譲る。
+  function applySoundSw(){var sw=document.getElementById("soundSw");if(sw)sw.setAttribute("aria-checked",soundOn?"true":"false")}
+  function setSound(on){
+    soundOn=!!on;
+    try{if(soundOn)localStorage.removeItem(SOUND_OFF_KEY);else localStorage.setItem(SOUND_OFF_KEY,"1")}catch(e){}
+    applySoundSw();
+    if(!soundOn){
+      try{humCancel()}catch(e){}
+      try{if(hum){hum.nodes.forEach(function(o){try{o.stop()}catch(e){}});hum=null}}catch(e){}
+      if(ctx){try{ctx.close()}catch(e){}ctx=null}
+      try{if("audioSession" in navigator)navigator.audioSession.type="auto"}catch(e){}
+    }else{
+      var c=audio();if(c)silentPing(c); // スイッチを押した操作の中で音を有効にしておく
+    }
   }
   // 押し込み＝「シャ」（金属がこすれる）→「コッ」（噛み合う）、戻り＝小さな「カチ」
   function sweep(c,dest,t,dur,f0,f1,q,gain){
@@ -550,18 +576,26 @@ body{
   // → 作り直さずに resume を試し、ダメなら指を離したとき(ユーザー操作の中)に作り直す。
   function silentPing(c){try{var b=c.createBuffer(1,1,22050),n=c.createBufferSource();n.buffer=b;n.connect(c.destination);n.start(0)}catch(e){}}
   function unlockAudio(){
-    if(!ctx||ctx.state==="closed"){if(ctx||document.hidden===false){var c0=audio();if(c0)silentPing(c0)}return}
+    if(!soundOn)return;
+    // 別アプリから戻った直後は、状態が「running」と出ていても無音のことがある。
+    // iOSは「指を離した操作の中」で作ったContextしか鳴らせないので、その中で、古いものを閉じて作り直す。
+    if(stale&&ctx){var old=ctx;ctx=null;stale=false;try{old.close()}catch(e){}}
+    if(!ctx||ctx.state==="closed"){
+      if(document.hidden===false){
+        var c0=audio();
+        if(c0){silentPing(c0);setTimeout(function(){if(ctx===c0&&c0.state!=="running")stale=true},700)}
+      }
+      return;
+    }
     if(ctx.state==="running")return;
     var c=ctx;
     try{var p=c.resume();if(p&&p.then)p.then(function(){silentPing(c)},function(){})}catch(e){}
-    setTimeout(function(){
-      if(ctx===c&&c.state!=="running"){
-        try{c.close()}catch(e){}
-        ctx=null;
-        var n=audio();if(n)silentPing(n);
-      }
-    },300);
+    // 鳴らせるようにならなかったら、操作の外では作り直さず、次に指を離したときにもう一度やる
+    setTimeout(function(){if(ctx===c&&c.state!=="running")stale=true},700);
   }
+  // 画面から離れたら、戻ってきた最初の操作で作り直す
+  document.addEventListener("visibilitychange",function(){if(document.hidden&&ctx)stale=true});
+  window.addEventListener("pagehide",function(){if(ctx)stale=true});
   ["pointerup","touchend","click","keyup"].forEach(function(t){document.addEventListener(t,unlockAudio,true)});
   function buzz(ms){try{if(navigator.vibrate)navigator.vibrate(ms)}catch(e){}}
 
@@ -932,6 +966,8 @@ body{
   document.getElementById("sclose").addEventListener("click",closeSettings);
   document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!settingsEl.hidden)closeSettings()});
   notifySw.addEventListener("click",toggleNotify);
+  document.getElementById("soundSw").addEventListener("click",function(){setSound(!soundOn)});
+  applySoundSw();
 
   // ===== テーマ応募と管理人 =====
   // 応募は Firebase の themeSubmissions に書き込む。採用・不採用を決められるのは「管理者」だけ。
