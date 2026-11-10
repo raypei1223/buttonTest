@@ -316,7 +316,7 @@ body{
   transition:transform .16s cubic-bezier(.2,1.8,.35,1),box-shadow .16s cubic-bezier(.2,1.8,.35,1)} /* 戻るときは、勢いよくポンッと（少し行き過ぎて止まる） */
 .md.pushed,.md.pressing{transform:translateY(calc(var(--mdh)*.86));
   box-shadow:inset 0 1px 0 rgba(255,255,255,.35),inset 0 -2px 4px rgba(0,0,0,.35),0 calc(var(--mdh)*.14) 0 #3d3b36,0 calc(var(--mdh)*.14 + var(--s)*.004) calc(var(--s)*.008) var(--shadow);
-  transition:transform .55s cubic-bezier(.3,.55,.3,1),box-shadow .55s cubic-bezier(.3,.55,.3,1)} /* 押し込むときは、ゆっくり沈む。「だれかと」のあいだは押し込まれたまま */
+  transition:transform .5s cubic-bezier(.3,.55,.3,1),box-shadow .5s cubic-bezier(.3,.55,.3,1)} /* 押し込むときは、ゆっくり沈む。「だれかと」のあいだは押し込まれたまま */
 .mdlamp{position:absolute;left:50%;top:50%;width:46%;height:46%;margin:-23% 0 0 -23%;border-radius:50%;background:#2b2b28;box-shadow:inset 0 1px 2px rgba(0,0,0,.7);transition:background .3s,box-shadow .3s}
 .md.on .mdlamp{background:#46e37d;box-shadow:0 0 calc(var(--s)*.03) #46e37d,inset 0 0 3px rgba(255,255,255,.6)}
 .md.wait .mdlamp{background:#ffb83d;box-shadow:0 0 calc(var(--s)*.025) #ffb83d;animation:mdblink 1.4s ease-in-out infinite}
@@ -971,36 +971,51 @@ body{
       });
     }).catch(function(e){dbg("通知の自動オン",e)}).then(function(){autoNotifyBusy=false});
   }
-  // モードの切り替えボタン（液晶の左下）。相手が決まっているときは、間違って押さないよう3秒以内にもう一度押したときだけ解除する。
-  md.addEventListener("click",function(){
-    if(modeBusy)return;
-    if(mode!=="pair"){md.classList.add("pressing");if(performance.now()-mdDownAt>1500){mdDownAt=performance.now();mdLatched=false} /* キーボード操作 */ mdLatchSound();enterPair();return}
-    if(pairState==="paired"&&Date.now()-armedAt>3000){armedAt=Date.now();say("もう一度押すと、今の相手とのペアを解除して「みんなで」に戻ります");return}
-    armedAt=0;mdLatched=true;mdPopSound();leavePair(); // 押し込まれていたボタンが、ポンッと跳ね返る
-  });
-  // 押している間から、ボタンがゆっくり沈み始める。押さずに指が外れたら、ポンッと戻る。
-  // 音：押し込む音は、ボタンが沈み切るころ(MD_LATCH_MS)に鳴らす。跳ね返る音は、戻り始める瞬間に鳴らす。
-  var mdUp=false,MD_LATCH_MS=380,mdLatchT=0,mdDownAt=0,mdLatched=false; // mdLatched: 押し込む音を鳴らし済み
-  function mdLatchSound(){ // 押し込む音の予約。押してから MD_LATCH_MS 後（指を離すのが遅ければ、沈み切った時点で鳴る。速ければ離した直後に鳴る）
-    if(mdLatched)return;
-    clearTimeout(mdLatchT);audio(); // 音の仕組みは、ユーザー操作の中で用意しておく
-    mdLatchT=setTimeout(function(){mdLatched=true;playMd("down")},Math.max(0,MD_LATCH_MS-(performance.now()-mdDownAt)));
+  // モードの切り替えボタン（液晶の左下）。
+  //  ・「みんなで」→「だれかと」：長押し（MD_LATCH_MS）。押している間にゆっくり沈み、沈み切ったところで切り替わる。短く押しただけでは入らず、「長押しでモード切替え」と出てボタンは戻る。
+  //  ・「だれかと」→「みんなで」：押し込まれたボタンを、ふつうに1回押すだけで、ポンッと戻る。
+  // 音：押し込む音は、沈み切って切り替わる瞬間に鳴らす。跳ね返る音は、戻り始める瞬間に鳴らす（押し込む音が鳴っていたときだけ）。
+  var MD_LATCH_MS=500,mdLatchT=0,mdLatched=false,mdCommitted=false,mdSwallow=false; // mdLatched: 押し込む音を鳴らし済み / mdCommitted: 長押しが完了した / mdSwallow: 長押しの後に来る click を無視する
+  function mdHoldStart(){
+    if(mode==="pair"||modeBusy)return;
+    mdLatched=false;mdCommitted=false;
+    md.classList.add("pressing");audio(); // 音の仕組みは、ユーザー操作の中で用意しておく
+    clearTimeout(mdLatchT);
+    mdLatchT=setTimeout(function(){ // 長押しが完了：沈み切って、カチッと入る
+      if(mode==="pair"||modeBusy)return;
+      mdCommitted=true;mdSwallow=true;mdLatched=true;playMd("down");enterPair();
+    },MD_LATCH_MS);
   }
-  function mdPopSound(){ // 押し込まれていたボタンの跳ね返り音（押し込む音が鳴っていたときだけ）
+  function mdHoldEnd(){ // 指を離した・外れた
+    if(mdCommitted){mdCommitted=false;return} // もう切り替え済み
+    clearTimeout(mdLatchT);
+    if(md.classList.contains("pressing")&&!modeBusy){md.classList.remove("pressing");say("長押しでモード切替え")}
+  }
+  function mdPopSound(){
     clearTimeout(mdLatchT);
     if(mdLatched){mdLatched=false;playMd("up")}
   }
-  function mdCancelPress(){ // 押し切らずに指が外れた：沈みかけたボタンが戻る
-    if(md.classList.contains("pressing")){md.classList.remove("pressing")}
-    mdPopSound();
+  function mdRelease(){ // 押し込まれていたボタンが、ポンッと跳ね返る
+    if(modeBusy)return;
+    mdLatched=true;mdPopSound();leavePair();
   }
   md.addEventListener("pointerdown",function(e){
     if(e.pointerType==="mouse"&&e.button!==0)return;
-    mdDownAt=performance.now();mdUp=false;mdLatched=false;
-    if(mode!=="pair"&&!modeBusy){md.classList.add("pressing");mdLatchSound()}
+    mdSwallow=false;mdHoldStart();
   });
-  md.addEventListener("pointerup",function(){mdUp=true;setTimeout(function(){if(!modeBusy&&mode!=="pair")mdCancelPress()},400)});
-  ["pointercancel","pointerleave"].forEach(function(n){md.addEventListener(n,function(){if(mdUp||modeBusy||mode==="pair")return;mdCancelPress()})});
+  md.addEventListener("pointerup",function(){mdHoldEnd();if(mdSwallow)setTimeout(function(){mdSwallow=false},80)});
+  ["pointercancel","pointerleave"].forEach(function(n){md.addEventListener(n,mdHoldEnd)});
+  md.addEventListener("click",function(){
+    if(mdSwallow||modeBusy)return;
+    if(mode==="pair")mdRelease(); // 戻すのは単押しでよい
+  });
+  md.addEventListener("keydown",function(e){ // キーボード：Enter／Space。入るのは長押し、戻すのは単押し
+    if(e.key!==" "&&e.key!=="Enter")return;
+    e.preventDefault();if(e.repeat)return;
+    if(mode==="pair")mdRelease();else mdHoldStart();
+  });
+  md.addEventListener("keyup",function(e){if(e.key===" "||e.key==="Enter"){e.preventDefault();mdHoldEnd()}});
+  md.addEventListener("contextmenu",function(e){e.preventDefault()}); // 長押しでメニューを出さない
   // 設定の「通知」スイッチ：「だれかと」のときの通知（初めはオン）。オフにしても「だれかと」はそのまま使える。「みんなで」のときは通知を使わない。
   var lastToggle=0;
   function toggleNotify(){
@@ -1500,7 +1515,7 @@ body{
       tCap=document.getElementById("tcap"),tText=document.getElementById("ttext"),tDots=document.getElementById("tdots"),
       tNext=document.getElementById("tnext"),stageEl=document.querySelector(".stage");
   var TOUR=[
-    {ids:["btn"],pad:28,leds:true,lines:function(){return[{t:"１日に１度だけ押せる"},{t:"残り数＝光っているLED"}]}},
+    {ids:["btn"],sel:".well",pad:12,leds:true,lines:function(){return[{t:"１日に１度だけ押せる"},{t:"残り数＝光っているLED"}]}},
     {ids:["sq"],screen:"chart",lines:function(){return[{t:"他の人の押したタイミングを見る"}]}},
     {ids:["rb"],screen:"theme",lines:function(){return[{t:"今日のテーマを見る"}]}},
     {ids:["md"],lines:function(){var p=(mode==="pair");return[
@@ -1561,7 +1576,7 @@ body{
   function tourShow(i){
     var tok=++tourTok;tourT.forEach(clearTimeout);tourT=[];
     tourRelease();clearHoles();tourI=i;
-    var st=TOUR[i],el=document.getElementById(st.ids[0]);
+    var st=TOUR[i],el=st.sel?document.querySelector(st.sel):document.getElementById(st.ids[0]);
     tText.textContent="";
     st.lines().forEach(function(l){var p=document.createElement("p");p.textContent=l.t;if(l.c)p.className=l.c;tText.appendChild(p)});
     tDots.textContent="";
