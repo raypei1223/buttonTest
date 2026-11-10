@@ -770,7 +770,7 @@ body{
   ["gesturestart","gesturechange","gestureend"].forEach(function(t){
     document.addEventListener(t,function(e){e.preventDefault()});
   });
-  document.addEventListener("touchstart",function(e){if(e.target&&e.target.closest&&e.target.closest("#gm,#settings,#md,#tour"))return;e.preventDefault()},{passive:false});
+  document.addEventListener("touchstart",function(e){if(e.target&&e.target.closest&&e.target.closest("#settings,#tour"))return;e.preventDefault()},{passive:false});
 
   // ===== 通信（Firebase）と通知 =====
   // 赤いボタン(#btn)を押すたびに、このアプリを使っているほかの人へ通知する。
@@ -975,7 +975,7 @@ body{
   //  ・「みんなで」→「だれかと」：長押し（MD_LATCH_MS）。押している間にゆっくり沈み、沈み切ったところで切り替わる。短く押しただけでは入らず、「長押しでモード切替え」と出てボタンは戻る。
   //  ・「だれかと」→「みんなで」：押し込まれたボタンを、ふつうに1回押すだけで、ポンッと戻る。
   // 音：押し込む音は、沈み切って切り替わる瞬間に鳴らす。跳ね返る音は、戻り始める瞬間に鳴らす（押し込む音が鳴っていたときだけ）。
-  var MD_LATCH_MS=500,mdLatchT=0,mdLatched=false,mdCommitted=false,mdSwallow=false; // mdLatched: 押し込む音を鳴らし済み / mdCommitted: 長押しが完了した / mdSwallow: 長押しの後に来る click を無視する
+  var MD_LATCH_MS=500,mdLatchT=0,mdLatched=false,mdCommitted=false,mdWasPair=false; // mdLatched: 押し込む音を鳴らし済み / mdCommitted: 長押しが完了した / mdWasPair: 押し始めたとき、すでに「だれかと」だった
   function mdHoldStart(){
     if(mode==="pair"||modeBusy)return;
     mdLatched=false;mdCommitted=false;
@@ -983,7 +983,7 @@ body{
     clearTimeout(mdLatchT);
     mdLatchT=setTimeout(function(){ // 長押しが完了：沈み切って、カチッと入る
       if(mode==="pair"||modeBusy)return;
-      mdCommitted=true;mdSwallow=true;mdLatched=true;playMd("down");enterPair();
+      mdCommitted=true;mdLatched=true;playMd("down");enterPair();
     },MD_LATCH_MS);
   }
   function mdHoldEnd(){ // 指を離した・外れた
@@ -1001,14 +1001,13 @@ body{
   }
   md.addEventListener("pointerdown",function(e){
     if(e.pointerType==="mouse"&&e.button!==0)return;
-    mdSwallow=false;mdHoldStart();
+    mdWasPair=(mode==="pair");mdHoldStart();
   });
-  md.addEventListener("pointerup",function(){mdHoldEnd();if(mdSwallow)setTimeout(function(){mdSwallow=false},80)});
+  md.addEventListener("pointerup",function(e){
+    mdHoldEnd();
+    if(mdWasPair){mdWasPair=false;if(!modeBusy&&pointInside(md,e,8))mdRelease()} // 戻すのは単押しでよい（離したときに戻る）
+  });
   ["pointercancel","pointerleave"].forEach(function(n){md.addEventListener(n,mdHoldEnd)});
-  md.addEventListener("click",function(){
-    if(mdSwallow||modeBusy)return;
-    if(mode==="pair")mdRelease(); // 戻すのは単押しでよい
-  });
   md.addEventListener("keydown",function(e){ // キーボード：Enter／Space。入るのは長押し、戻すのは単押し
     if(e.key!==" "&&e.key!=="Enter")return;
     e.preventDefault();if(e.repeat)return;
@@ -1052,7 +1051,13 @@ body{
     if(settingsEl.hidden)openSettings();
     else closeSettings();
   }
-  gm.addEventListener("click",toggleSettings);
+  var gmTouchAt=0;
+  function pointInside(el,e,m){var r=el.getBoundingClientRect();return e.clientX>=r.left-m&&e.clientX<=r.right+m&&e.clientY>=r.top-m&&e.clientY<=r.bottom+m}
+  gm.addEventListener("pointerup",function(e){ // タッチ・ペン：画面全体の touchstart 抑止（iPhoneの拡大鏡などを防ぐ）で click が出ないので、ここで開閉する
+    if(e.pointerType==="mouse"||!pointInside(gm,e,8))return;
+    gmTouchAt=Date.now();toggleSettings();
+  });
+  gm.addEventListener("click",function(){if(Date.now()-gmTouchAt<600)return;toggleSettings()});
   gm.addEventListener("keyup",function(e){if(e.key===" "||e.key==="Enter")toggleSettings()});
   document.getElementById("sclose").addEventListener("click",closeSettings);
   document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!settingsEl.hidden)closeSettings()});
