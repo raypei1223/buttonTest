@@ -334,7 +334,8 @@ body{
 .tr{fill:none;stroke:#ffeeb8;stroke-width:2;opacity:0;transition:opacity .45s ease;filter:drop-shadow(0 0 7px rgba(255,226,140,.95))}
 .tr.on{opacity:1;animation:trpulse 1.8s ease-in-out .5s infinite}
 @keyframes trpulse{50%{opacity:.5}}
-.tcap{position:absolute;left:50%;transform:translateX(-50%);width:min(92vw,340px);background:#efece2;color:#26272b;border-radius:16px;padding:14px 16px 12px;box-shadow:0 10px 30px rgba(0,0,0,.45);transition:top .3s ease;touch-action:manipulation}
+.tcap{position:absolute;left:50%;transform:translateX(-50%);width:min(92vw,340px);background:#efece2;color:#26272b;border-radius:16px;padding:14px 16px 12px;box-shadow:0 10px 30px rgba(0,0,0,.45);opacity:0;transition:top .3s ease,opacity .5s ease;touch-action:manipulation}
+.tour.on .tcap{opacity:1}
 .ttext p{margin:0 0 6px;font-size:15px;line-height:1.6;white-space:pre-line}
 .ttext p.tt{font-weight:600}
 .ttext p.cur{font-weight:600;background:rgba(52,168,83,.16);border-radius:6px;padding:2px 6px;margin-left:-6px;margin-right:-6px}
