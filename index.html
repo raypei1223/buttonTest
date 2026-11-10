@@ -1587,12 +1587,26 @@ body{
     tDots.textContent="";
     TOUR.forEach(function(_,k){var d=document.createElement("i");if(k===i)d.className="on";tDots.appendChild(d)});
     tNext.textContent=(i===TOUR.length-1)?"はじめる":"次へ";
-    var rects=[holeRect(el,st.pad||10)],rLed=null,rScr=null;
-    if(st.ids[0]==="md")rects[0].h+=14; // 出っ張りの側面まで含める
-    if(st.leds){rLed=ledRect();rects.push(rLed)}
-    if(st.screen){rScr=holeRect(chartEl,6);rects.push(rScr)}
-    placeCap(rects);
-    function later(fn,ms){tourT.push(setTimeout(function(){if(tok===tourTok&&tourOn)fn()},ms))}
+    var rects,rLed=null,rScr=null,waitLoad=false,pend=[];
+    function measure(){ // 枠の位置は出す直前に測り直す（読み込み中は配置がまだ動くため）
+      rects=[holeRect(el,st.pad||10)];rLed=null;rScr=null;
+      if(st.ids[0]==="md")rects[0].h+=14; // 出っ張りの側面まで含める
+      if(st.leds){rLed=ledRect();rects.push(rLed)}
+      if(st.screen){rScr=holeRect(chartEl,6);rects.push(rScr)}
+    }
+    measure();placeCap(rects);
+    function later(fn,ms){tourT.push(setTimeout(function(){
+      if(tok!==tourTok||!tourOn)return;
+      if(i===0&&document.readyState!=="complete"){ // 最初の案内は、読み込みが終わってから測って出す
+        pend.push(fn);
+        if(!waitLoad){waitLoad=true;window.addEventListener("load",function(){setTimeout(function(){
+          if(tok!==tourTok||!tourOn)return;
+          measure();placeCap(rects);pend.forEach(function(f){f()});pend=[];
+        },60)},{once:true})}
+        return;
+      }
+      measure();fn();
+    },ms))}
     later(function(){addHole(rects[0])},i===0?450:150);
     if(rLed)later(function(){addHole(rLed)},(i===0?450:150)+600); // 赤いボタンのあと、LEDも明るくなる
     if(st.screen){
@@ -1630,7 +1644,7 @@ body{
   document.getElementById("tourBtn").addEventListener("click",tourStart);
   // 初めて開いたときは、読み込みの完了を待たず、スクリプトが動いた時点で操作をロックして案内を始める（案内が出るまでの間にボタンを押せないように）
   if(!tourSeen())tourStart();
-  window.addEventListener("load",function(){if(tourOn&&tourI===0)tourShow(0)}); // 読み込みで見た目の大きさが変わったときのために、最初の案内の位置だけ測り直す
+  // （読み込みで見た目が変わる分は、tourShow の中で「出す直前に測り直す」ので、ここでの再実行はしない）
 
   renderChart(); // 消灯したガラスの画面を、最初から机に置いておく
   document.addEventListener("visibilitychange",function(){if(!document.hidden)clearNotes()});
