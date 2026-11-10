@@ -838,7 +838,13 @@ body{
     return (auth.currentUser?Promise.resolve(auth.currentUser):ensureAuth()).then(function(u){return u.getIdToken()}).then(function(t){return t},function(){return null}).then(function(t){
       var x={};if(extra)for(var k in extra)x[k]=extra[k];
       if(t){x.idToken=t;if(isAdmin)x.wantAdmin=true}
-      return pairCall(path,x);
+      if(!(t&&isAdmin))return pairCall(path,x);
+      // 管理者のときは、Worker が Realtime Database を読むために、App Check のトークンも渡す
+      var ac=null;try{ac=firebase.appCheck().getToken()}catch(e){}
+      return Promise.resolve(ac).then(function(r){return r&&r.token},function(){return null}).then(function(at){
+        if(at)x.appCheckToken=at;
+        return pairCall(path,x);
+      });
     });
   }
   // サーバーの返事（state: none/waiting/paired、pid: 組み合わせの印）を画面に反映する。quiet のときは何も言わない。
