@@ -1605,7 +1605,7 @@ body{
         },60)},{once:true})}
         return;
       }
-      measure();fn();
+      measure();if(i===0)placeCap(rects);fn(); // 最初の案内は説明文も測り直した位置に置く
     },ms))}
     later(function(){addHole(rects[0])},i===0?450:150);
     if(rLed)later(function(){addHole(rLed)},(i===0?450:150)+600); // 赤いボタンのあと、LEDも明るくなる
