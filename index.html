@@ -305,6 +305,7 @@ body{
 .sub{display:flex;align-items:center;gap:6px;padding:6px 0}
 .sub .stext{flex:1;min-width:0;word-break:break-all;font-size:14px}
 .subnone{font-size:13px;opacity:.6;padding:4px 0}
+.stag{font-size:11px;opacity:.6;white-space:nowrap}
 .sw[aria-checked="true"] .knob{transform:translateX(20px)}
 /* モード切り替えボタン：灰色の丸いボタン。ランプ＝消灯:みんなで / 橙の点滅:相手を探し中 / 緑:相手が決まっている */
 .md{all:unset;position:absolute;left:calc(50% - var(--s)/2);top:calc(var(--s)*.31);cursor:pointer;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
@@ -350,6 +351,8 @@ body{
     <div class="ssec" id="adminBox" hidden>
       <h3>応募の審査</h3>
       <div id="subList"></div>
+      <div class="srow2" style="margin-top:8px"><button class="sbtn" id="themeListBtn" type="button">テーマ一覧を見る</button></div>
+      <div id="themeAdmin" hidden></div>
       <div class="srow2" style="margin-top:8px"><button class="sbtn" id="adminOut" type="button">管理者をやめる</button></div>
     </div>
   </div>
@@ -980,7 +983,7 @@ body{
   // 管理者かどうかはこの画面ではなく Firebase ルールが判断する（パスコードもこのファイルには書かない）。
   var themeIn=document.getElementById("themeIn"),themeSend=document.getElementById("themeSend");
   var gateEl=document.getElementById("adminGate"),adminPass=document.getElementById("adminPass"),adminGo=document.getElementById("adminGo");
-  var adminBox=document.getElementById("adminBox"),subList=document.getElementById("subList"),adminOut=document.getElementById("adminOut");
+  var adminBox=document.getElementById("adminBox"),subList=document.getElementById("subList"),adminOut=document.getElementById("adminOut"),themeListBtn=document.getElementById("themeListBtn"),themeAdmin=document.getElementById("themeAdmin");
   var isAdmin=false,subQ=null,SUBMIT_KEY="button_theme_submit_at";
 
   function sendTheme(){
@@ -1031,6 +1034,7 @@ body{
   }
   function setAdmin(v){
     isAdmin=v;adminBox.hidden=!v;
+    if(!v){themeAdmin.hidden=true;themeAdmin.textContent="";themeListBtn.textContent="テーマ一覧を見る"}
     if(v){gateEl.hidden=true;watchSubs()}else unwatchSubs();
   }
   function checkAdmin(){
@@ -1097,6 +1101,50 @@ body{
     db.ref().update(up).then(function(){say(adopt?"採用しました（テーマ一覧に追加）":"不採用にしました")})
       .catch(function(e){dbg("審査",e);btns.forEach(function(b){b.disabled=false});say("操作に失敗しました")});
   }
+  // --- テーマ一覧：管理者が「テーマ一覧を見る」ボタンで開き、テーマを取り除く（取り除くボタンは2回押して実行） ---
+  // 取り除くときは消さずに {text, removedAt} にする。取り除いたテーマは、その日はまだ使われ、翌日から使われない。
+  var armedBtn=null,armedTimer=0;
+  function disarm(){ // 「もう一度押す」の待ち状態を解く
+    if(armedTimer){clearTimeout(armedTimer);armedTimer=0}
+    if(armedBtn){armedBtn.textContent="取り除く";armedBtn.classList.remove("no");armedBtn=null}
+  }
+  function renderThemeAdmin(){
+    disarm();themeAdmin.textContent="";
+    var load=document.createElement("div");load.className="subnone";load.textContent="読み込み中…";themeAdmin.appendChild(load);
+    fetchThemeList().then(function(r){
+      themeAdmin.textContent="";
+      if(!r.ok){var er=document.createElement("div");er.className="subnone";er.textContent="読み込めませんでした";themeAdmin.appendChild(er);return}
+      var start=dayOfKey(themeKey(0))*86400000-9*3600000,items=[];
+      r.list.forEach(function(t){if(!(t.rm&&t.rm<start))items.push(t)}); // 昨日までに取り除いたものは出さない
+      items.sort(function(a,b){return(a.at-b.at)||(a.k<b.k?-1:a.k>b.k?1:0)});
+      var h=document.createElement("div");h.className="subnone";h.textContent="テーマ一覧（"+items.length+"件）";themeAdmin.appendChild(h);
+      items.forEach(function(t){
+        var row=document.createElement("div");row.className="sub";
+        var tx=document.createElement("span");tx.className="stext";tx.textContent=t.text;row.appendChild(tx);
+        var tag=t.rm?"明日から外れる":(t.at>=start?"明日から":"");
+        if(tag){var tg=document.createElement("span");tg.className="stag";tg.textContent=tag;row.appendChild(tg)}
+        if(!t.rm){
+          var rmv=document.createElement("button");rmv.type="button";rmv.className="sbtn";rmv.textContent="取り除く";
+          rmv.addEventListener("click",function(){
+            if(armedBtn!==rmv){ // 1回目：押し間違いを防ぐため、4秒だけ「もう一度押す」にして待つ
+              disarm();armedBtn=rmv;rmv.classList.add("no");rmv.textContent="もう一度押す";
+              armedTimer=setTimeout(disarm,4000);return;
+            }
+            disarm();rmv.disabled=true; // 2回目：取り除く
+            var o={text:t.text,removedAt:TS};if(t.aa>0)o.addedAt=t.aa;
+            db.ref("themes/"+t.k).set(o).then(function(){say("取り除きました（明日から使われません）");renderThemeAdmin()})
+              .catch(function(e){dbg("テーマを取り除く",e);rmv.disabled=false;say("操作に失敗しました")});
+          });
+          row.appendChild(rmv);
+        }
+        themeAdmin.appendChild(row);
+      });
+    });
+  }
+  themeListBtn.addEventListener("click",function(){
+    if(!themeAdmin.hidden){disarm();themeAdmin.hidden=true;themeAdmin.textContent="";themeListBtn.textContent="テーマ一覧を見る";return}
+    themeAdmin.hidden=false;themeListBtn.textContent="テーマ一覧を閉じる";renderThemeAdmin();
+  });
   setBell(false);
   checkAdmin(); // 管理者なら、起動時から回数制限なしにする
   if(mode==="pair"){ // 通知が使えなくても「だれかと」のまま入り直す（通知なし）
@@ -1263,16 +1311,16 @@ body{
     return ensureAuth().then(function(){return db.ref("themes").once("value")}).then(function(sn){
       var list=[];
       sn.forEach(function(c){
-        var v=c.val(),text=null,at=0,rm=0;
+        var v=c.val(),text=null,at=0,aa=0,rm=0;
         if(typeof v==="string")text=v;
         else if(v&&typeof v==="object"){
           if(typeof v.text==="string")text=v.text;
-          if(typeof v.addedAt==="number")at=v.addedAt;
+          if(typeof v.addedAt==="number")at=aa=v.addedAt;
           if(typeof v.removedAt==="number")rm=v.removedAt;
         }
         if(text===null||!text.trim())return;
         if(!at)at=keyTime(c.key);
-        list.push({k:c.key,text:text.trim(),at:at,rm:rm});
+        list.push({k:c.key,text:text.trim(),at:at,aa:aa,rm:rm});
       });
       return{list:list,ok:true};
     }).catch(function(e){dbg("テーマの読み込み",e);return def});
