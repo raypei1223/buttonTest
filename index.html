@@ -1238,43 +1238,62 @@ body{
   // Firebase の themes に「テーマの一覧」を入れておく（文字列を1件ずつ。配列でも push キーでもよい）。
   // その日のテーマは、日付から決まる順番で一覧から1つ選ぶ（連続した日は重ならない）。同じ日・同じ一覧なら全員が同じテーマになる。
   // 日付の区切りは日本時間(JST)の0時で固定。一覧が空・未登録・通信できないときは「無条件」。
-  // 最初に決まった時点で、そのテーマのキーを dailyTheme/<日付> に記録する。以降はその日、全員がそれを使うので、
-  // あとから themes に項目を足したり消したりしても、今日のテーマは動かない（変わるのは明日以降）。
+  // その日のテーマは、「その日の0時より前に採用されたテーマだけ」の一覧から、日付だけで決める（どこにも記録しない）。
+  // 誰が・いつ計算しても同じ結果になり、その日に採用・追加したテーマは翌日から使われる（今日のテーマは動かない）。
+  // 採用した時刻は、値が {text, addedAt} ならその addedAt、文字列なら push キーに入っている時刻から読む。
+  // 一覧から外すときは消さずに {text, removedAt:時刻(ms)} にする（消すと、その日以前の再計算が変わる）。
   var DEFAULT_THEME="無条件",themeCache=null,themeOn=false; // themeCache: {key:日付, text:その日のテーマ}
   function themeKey(addDays){
     var d=new Date(Date.now()+serverOff+9*3600000+(addDays||0)*86400000);
     function z(n){return(n<10?"0":"")+n}
     return d.getUTCFullYear()+"-"+z(d.getUTCMonth()+1)+"-"+z(d.getUTCDate());
   }
-  // themes を読む。各項目は {k:キー, text:文字列}。キー順＝全端末で同じ並び。
+  // themes を読む。各項目は {k:キー, text:文字列, at:採用した時刻(ms。不明は0), rm:外した時刻(ms。なければ0)}。キー順＝全端末で同じ並び。
+  // push キーの先頭8文字には、作った時刻（ms）が64進数で入っている。読めないキー（0,1,2 の配列など）は at=0（いつも対象）。
+  var PUSH_CH="-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz";
+  function keyTime(k){
+    if(typeof k!=="string"||k.length<8)return 0;
+    var t=0,i,p;
+    for(i=0;i<8;i++){p=PUSH_CH.indexOf(k.charAt(i));if(p<0)return 0;t=t*64+p}
+    return(t>1.4e12&&t<4e12)?t:0; // 2014〜2096年ごろに収まらないものは、時刻ではないキーとして扱う
+  }
   function fetchThemeList(){
     var def={list:[],ok:false};
     if(!db)return Promise.resolve(def);
     return ensureAuth().then(function(){return db.ref("themes").once("value")}).then(function(sn){
       var list=[];
-      sn.forEach(function(c){var v=c.val();if(typeof v==="string"&&v.trim())list.push({k:c.key,text:v.trim()})});
+      sn.forEach(function(c){
+        var v=c.val(),text=null,at=0,rm=0;
+        if(typeof v==="string")text=v;
+        else if(v&&typeof v==="object"){
+          if(typeof v.text==="string")text=v.text;
+          if(typeof v.addedAt==="number")at=v.addedAt;
+          if(typeof v.removedAt==="number")rm=v.removedAt;
+        }
+        if(text===null||!text.trim())return;
+        if(!at)at=keyTime(c.key);
+        list.push({k:c.key,text:text.trim(),at:at,rm:rm});
+      });
       return{list:list,ok:true};
     }).catch(function(e){dbg("テーマの読み込み",e);return def});
   }
-  function findTheme(list,k){for(var i=0;i<list.length;i++)if(list[i].k===k)return list[i];return null}
+  // "2026-11-10" → 日本時間の日数（pickTheme の day と同じ数え方）
+  function dayOfKey(key){var p=key.split("-");return Math.round(Date.UTC(+p[0],+p[1]-1,+p[2])/86400000)}
+  // その日の日本時間0時の時点で使えるテーマだけに絞る（0時より前に採用され、0時より前に外されていないもの）
+  function themesAt(list,day){
+    var start=day*86400000-9*3600000,out=[],i,t;
+    for(i=0;i<list.length;i++){t=list[i];if(t.at<start&&!(t.rm&&t.rm<start))out.push(t)}
+    return out;
+  }
   // その日のテーマを決める。戻り値は {text, cache}（cache=true なら、このページを開いている間は使い回してよい）。
-  //  1) dailyTheme/<日付> にキーが記録済みなら、それを使う。
-  //  2) なければ、日付から計算して選び、記録する（先に書いた人が勝ち。負けたら、書かれていたほうを使う）。
-  //  3) 記録の読み書きに失敗したときは、計算した結果をそのまま表示する（使い回さず、次回また試す）。
+  // 記録は使わず、「その日の0時時点の一覧」と日付だけから計算するので、誰が計算しても同じになる。
   function resolveTheme(key){
     var def={text:null,cache:false,error:true}; // 読み込めなかった
     var flow=fetchThemeList().then(function(r){
       if(!r.ok)return def;
-      if(!r.list.length)return{text:DEFAULT_THEME,cache:true};
-      var ref=db.ref("dailyTheme/"+key),pick=pickTheme(r.list);
-      return ref.once("value").then(function(sn){
-        var pinned=findTheme(r.list,sn.val());
-        if(pinned)return{text:pinned.text,cache:true};
-        return ref.transaction(function(cur){return cur===null?pick.k:undefined}).then(function(res){
-          var w=findTheme(r.list,res.snapshot.val())||pick;
-          return{text:w.text,cache:true};
-        });
-      }).catch(function(e){dbg("今日のテーマの記録",e);return{text:pick.text,cache:false}});
+      var day=dayOfKey(key),use=themesAt(r.list,day);
+      if(!use.length)return{text:DEFAULT_THEME,cache:true};
+      return{text:pickTheme(use,day).text,cache:true};
     });
     var to=new Promise(function(res){setTimeout(function(){res(def)},4000)}); // 圏外で待ち続けないように
     return Promise.race([flow,to]);
@@ -1283,9 +1302,8 @@ body{
   //  ・一覧がn件（3件以上）のとき、n日ごとに一覧を疑似乱数でシャッフルし、その並びを1日ずつ使う（n日間は重ならない）。
   //  ・次のまとまりの先頭が、前のまとまりの最後と同じになるときは、先頭と2番目を入れ替える。
   //  ・1件ならそのテーマ、2件なら日替わりで交互。どれも日付だけで決まるので、同じ日・同じ一覧なら全員が同じテーマになる。
-  function pickTheme(list){
-    var n=list.length;if(!n)return DEFAULT_THEME;
-    var day=Math.floor((Date.now()+serverOff+9*3600000)/86400000); // 日本時間の日数
+  function pickTheme(list,day){ // day: 日本時間の日数（dayOfKey）
+    var n=list.length;if(!n)return{k:"",text:DEFAULT_THEME};
     if(n===1)return list[0];
     if(n===2)return list[day%2];
     function deck(c){
