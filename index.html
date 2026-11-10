@@ -796,12 +796,14 @@ body{
     var p={deviceId:deviceId()};if(extra)for(var k in extra)p[k]=extra[k];
     return pushPost(path,p).then(function(r){if(!r.ok){var e=new Error("pair "+r.status);e.status=r.status;throw e}return r.json()});
   }
-  // 管理者のときだけ、Firebase のログイン証明を添える。Worker が管理者かどうかを確かめて、回数や間隔の制限を外す。
+  // 記録（/pair/notify・/pair/crowd）には、Firebase のログイン証明を必ず添える。Worker が証明を確かめて、本人ごとに1日の回数を数える。
+  // 管理者のときは wantAdmin も付ける。Worker が管理者かどうかを確かめて、回数や間隔の制限を外す。
   function pairCallAdmin(path,extra){
-    if(!isAdmin||!auth||!auth.currentUser)return pairCall(path,extra);
-    return auth.currentUser.getIdToken().then(function(t){return t},function(){return null}).then(function(t){
+    var needTok=(path==="/pair/notify"||path==="/pair/crowd");
+    if(!auth||(!needTok&&!(isAdmin&&auth.currentUser)))return pairCall(path,extra);
+    return (auth.currentUser?Promise.resolve(auth.currentUser):ensureAuth()).then(function(u){return u.getIdToken()}).then(function(t){return t},function(){return null}).then(function(t){
       var x={};if(extra)for(var k in extra)x[k]=extra[k];
-      if(t)x.idToken=t;
+      if(t){x.idToken=t;if(isAdmin)x.wantAdmin=true}
       return pairCall(path,x);
     });
   }
