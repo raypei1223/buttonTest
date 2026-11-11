@@ -1607,11 +1607,12 @@ body{
     else if(tourDown==="theme"){holdUp(rb);try{clickRb(false)}catch(e){}hideTheme()}
     tourDown="";
   }
-  // 説明の箱は、明るくする場所に重ならない位置（下→上→穴と穴の間）に置く
+  // 説明の箱は、明るくする場所に重ならない位置に置く（上の方の穴は 下→上→穴と穴の間、下の方の穴は 上→下→穴と穴の間）
   function placeCap(rects){
     var vh=innerHeight,m=12,g=14,h=tCap.offsetHeight,top=1e9,bot=-1e9,c=[],y=null,i;
     rects.forEach(function(r){top=Math.min(top,r.y);bot=Math.max(bot,r.y+r.h)});
-    c.push(bot+g,top-h-g);
+    if((top+bot)/2>vh/2)c.push(top-h-g,bot+g); // 下の方のボタン（白・古びた・設定）は、ボタンの上に出す
+    else c.push(bot+g,top-h-g);
     var so=rects.slice().sort(function(a,b){return a.y-b.y});
     for(i=0;i<so.length-1;i++){var a=so[i].y+so[i].h,b=so[i+1].y;if(b-a>=h+2*g)c.push(a+(b-a-h)/2)}
     for(i=0;i<c.length&&y===null;i++){
