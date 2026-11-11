@@ -1356,7 +1356,7 @@ body{
     // 今の時刻を表す細い縦線（点より下に描く）
     var nx=L+Math.min(1,Math.max(0,(now-t0)/SPAN))*pw;
     svg+='<line class="now" x1="'+nx.toFixed(1)+'" x2="'+nx.toFixed(1)+'" y1="'+T+'" y2="'+(T+ph)+'"/>';
-    // 点：基本は縦の真ん中。すでにある点と重なりそうなときだけ、乱数（キー由来なので毎回同じ位置）で縦にずらして、重ならない位置を選ぶ。
+    // 点：近くに点がなければ縦の真ん中。近くに点があると、乱数（キー由来なので毎回同じ位置）で縦にずらす。点が増えるほど、ずらす範囲が広がる。
     var placed=[],yMin=T+4,yMax=T+ph-4,yMid=(yMin+yMax)/2,GAP=9,dots='',dotsMe=''; // GAP: これより近いと「重なりそう」（点の半径4.2の2個分＋少し）
     function nearest(x,y){ // いちばん近い既存の点までの距離（x は左から右へ並ぶので、離れたら打ち切れる）
       var score=1e9;
@@ -1366,13 +1366,21 @@ body{
       }
       return score;
     }
+    // 近く（左 WIN の範囲）に点が多いほど、縦に散らばる範囲を真ん中から上下へ広げる。FULL 個以上で全体の高さを使う。
+    var WIN=18,FULL=12,halfMax=(yMax-yMin)/2;
+    function crowd(x){ // 近くにすでにある点の数
+      var n=0;
+      for(var i=placed.length-1;i>=0;i--){if(x-placed[i].x>WIN)break;n++}
+      return n;
+    }
     list.forEach(function(p){
-      var x=L+(p.t-t0)/SPAN*pw,best=yMid;
-      if(nearest(x,yMid)<GAP){
-        var rnd=seeded(hashKey(p.k)),bestScore=-1,found=false;
+      var x=L+(p.t-t0)/SPAN*pw,best=yMid,n=crowd(x);
+      if(n>0){
+        var rnd=seeded(hashKey(p.k)),bestScore=-1,half0=halfMax*Math.min(1,n/FULL);
         for(var c=0;c<24;c++){
-          var y=yMin+rnd()*(yMax-yMin),score=nearest(x,y);
-          if(score>=GAP){best=y;found=true;break} // 重ならない位置が見つかったらそこにする
+          var half=half0+(halfMax-half0)*(c/23), // 重ならない位置が見つからなければ、少しずつ範囲を広げて探す
+              y=yMid+(rnd()*2-1)*half,score=nearest(x,y);
+          if(score>=GAP){best=y;break} // 重ならない位置が見つかったらそこにする
           if(score>bestScore){bestScore=score;best=y}
         }
       }
@@ -1558,11 +1566,11 @@ body{
   var TOUR=[
     {ids:["btn"],sel:".well",pad:12,leds:true,lines:function(){return[{t:"１日に１度だけ押せる"},{t:"残り数＝光っているLED"}]}},
     {ids:["sq"],pad:16,screen:"chart",lines:function(){return[{t:"他の人の押したタイミングを見る"}]}},
-    {ids:["rb"],pad:16,screen:"theme",lines:function(){return[{t:"今日のテーマを見る"}]}},
+    {ids:["rb"],pad:16,screen:"theme",lines:function(){return[{t:"今日のテーマを見る"},{t:"テーマを満たした時にボタンを押してみるのもアリ"}]}},
     {ids:["md"],lines:function(){var p=(mode==="pair");return[
       {t:"モード切替え",c:"tt"},
       {t:"みんなで：最大100人のグループ。\nテーマに沿って押してもよし、\n押さなくてもよし",c:p?"":"cur"},
-      {t:"だれかと：ランダムな一人とペアになる。\n１日三回までボタンを押せ、\n通知が来るようにもできる",c:p?"cur":""}]}},
+      {t:"だれかと：ランダムな一人とペアになる。\n１日３回までボタンを押し、\n通知を送り合うことができる",c:p?"cur":""}]}},
     {ids:["gm"],lines:function(){return[{t:"設定を開く（使い方をもう一度見る）"}]}}
   ];
   function tourSeen(){try{return localStorage.getItem(TOUR_KEY)==="1"}catch(e){return false}}
