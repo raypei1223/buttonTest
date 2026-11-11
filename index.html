@@ -1611,10 +1611,12 @@ body{
   function placeCap(rects){
     var vh=innerHeight,m=12,g=14,h=tCap.offsetHeight,top=1e9,bot=-1e9,c=[],y=null,i;
     rects.forEach(function(r){top=Math.min(top,r.y);bot=Math.max(bot,r.y+r.h)});
-    if((top+bot)/2>vh/2)c.push(top-h-g,bot+g); // 下の方のボタン（白・古びた・設定）は、ボタンの上に出す
+    var r0=rects[0],low=(r0.y+r0.h/2)>vh/2; // 液晶などは含めず、紹介するボタン本体が画面の下半分にあるか
+    if(low)c.push(r0.y-h-g); // 下の方のボタン（白・古びた・設定）は、ボタンのすぐ上に出す
     else c.push(bot+g,top-h-g);
     var so=rects.slice().sort(function(a,b){return a.y-b.y});
     for(i=0;i<so.length-1;i++){var a=so[i].y+so[i].h,b=so[i+1].y;if(b-a>=h+2*g)c.push(a+(b-a-h)/2)}
+    if(low)c.push(top-h-g,bot+g);
     for(i=0;i<c.length&&y===null;i++){
       var t=c[i];if(t<m||t+h>vh-m)continue;
       if(rects.some(function(r){return t<r.y+r.h+8&&t+h>r.y-8}))continue;
