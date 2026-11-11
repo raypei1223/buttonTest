@@ -1409,6 +1409,17 @@ body{
   // 採用した時刻は、値が {text, addedAt} ならその addedAt、文字列なら push キーに入っている時刻から読む。
   // 一覧から外すときは消さずに {text, removedAt:時刻(ms)} にする（消すと、その日以前の再計算が変わる）。
   var DEFAULT_THEME="無条件",themeCache=null,themeOn=false; // themeCache: {key:日付, text:その日のテーマ}
+  // その日のテーマは端末にも保存する。次に開いたときは、今日の分があればすぐ使う。日付が違う（昨日以前の）ものは使わず、消す。
+  var THEME_KEY="button_theme_day";
+  function setThemeCache(key,text){
+    themeCache={key:key,text:text};
+    try{localStorage.setItem(THEME_KEY,JSON.stringify(themeCache))}catch(e){}
+  }
+  try{
+    var tc0=JSON.parse(localStorage.getItem(THEME_KEY)||"null");
+    if(tc0&&typeof tc0.text==="string"&&tc0.text&&tc0.key===themeKey(0))themeCache=tc0;
+    else if(tc0)localStorage.removeItem(THEME_KEY);
+  }catch(e){}
   function themeKey(addDays){
     var d=new Date(Date.now()+serverOff+9*3600000+(addDays||0)*86400000);
     function z(n){return(n<10?"0":"")+n}
@@ -1460,7 +1471,7 @@ body{
       var day=dayOfKey(key),use=themesAt(r.list,day);
       var res=use.length?{text:pickTheme(use,day).text,cache:true}:{text:DEFAULT_THEME,cache:true};
       // 4秒を過ぎて届いた分も捨てない：覚えておき、「読み込めませんでした」を出していたら映し直す
-      themeCache={key:key,text:res.text};
+      setThemeCache(key,res.text);
       if(themeOn&&screenMode==="theme"&&themeKey(0)===key&&!(mode==="pair"&&pairState==="paired"))renderTheme(res.text,key);
       return res;
     });
@@ -1517,7 +1528,7 @@ body{
       renderTheme(null,key);
       (function tryTheme(n){
         resolveTheme(key).then(function(r){
-          if(r.cache)themeCache={key:key,text:r.text};
+          if(r.cache)setThemeCache(key,r.text);
           if(themeOn&&screenMode==="theme"&&themeKey(0)===key)renderTheme(r.text,key,r.error);
           // 読み込めなかったら、画面を出している間は3秒おきに最大3回やり直す
           if(r.error&&n<3)setTimeout(function(){
@@ -1667,7 +1678,7 @@ body{
     try{
       var key=themeKey(0);
       if(themeCache&&themeCache.key===key)return;
-      resolveTheme(key).then(function(r){if(r&&r.cache&&themeKey(0)===key)themeCache={key:key,text:r.text}}).catch(function(){});
+      resolveTheme(key).then(function(r){if(r&&r.cache&&themeKey(0)===key)setThemeCache(key,r.text)}).catch(function(){});
     }catch(e){}
   }
   prefetchTheme();
