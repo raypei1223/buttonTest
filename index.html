@@ -1607,6 +1607,15 @@ body{
     if(y===null)y=Math.max(m,vh-h-m);
     tCap.style.top=y+"px";
   }
+  // 対象の位置と大きさが、少しのあいだ変わらなくなったら cb を呼ぶ（最長1.5秒で打ち切る）
+  function settle(target,cb){
+    var last="",same=0,t0=Date.now();
+    (function tick(){
+      var r=target.getBoundingClientRect(),k=[r.left,r.top,r.width,r.height].map(Math.round).join();
+      same=(k===last)?same+1:0;last=k;
+      if(same>=2||Date.now()-t0>1500)cb();else setTimeout(tick,60);
+    })();
+  }
   function tourShow(i){
     var tok=++tourTok;tourT.forEach(clearTimeout);tourT=[];
     tourRelease();clearHoles();tourI=i;
@@ -1616,7 +1625,7 @@ body{
     tDots.textContent="";
     TOUR.forEach(function(_,k){var d=document.createElement("i");if(k===i)d.className="on";tDots.appendChild(d)});
     tNext.textContent=(i===TOUR.length-1)?"はじめる":"次へ";
-    var rects,rLed=null,rScr=null,waitLoad=false,pend=[];
+    var rects,rLed=null,rScr=null,waitLoad=false,settled=false,pend=[];
     function measure(){ // 枠の位置は出す直前に測り直す（読み込み中は配置がまだ動くため）
       rects=[holeRect(el,st.pad||10)];rLed=null;rScr=null;
       if(st.ids[0]==="md")rects[0].h+=14; // 出っ張りの側面まで含める
@@ -1626,12 +1635,12 @@ body{
     measure();placeCap(rects);
     function later(fn,ms){tourT.push(setTimeout(function(){
       if(tok!==tourTok||!tourOn)return;
-      if(i===0&&document.readyState!=="complete"){ // 最初の案内は、読み込みが終わってから測って出す
+      if(i===0&&!settled){ // 最初の案内は、ボタンの位置が落ち着くまで待ってから測って出す（読み込み完了は待たない）
         pend.push(fn);
-        if(!waitLoad){waitLoad=true;window.addEventListener("load",function(){setTimeout(function(){
+        if(!waitLoad){waitLoad=true;settle(el,function(){
           if(tok!==tourTok||!tourOn)return;
-          measure();placeCap(rects);pend.forEach(function(f){f()});pend=[];
-        },60)},{once:true})}
+          settled=true;measure();placeCap(rects);pend.forEach(function(f){f()});pend=[];
+        })}
         return;
       }
       measure();if(i===0)placeCap(rects);fn(); // 最初の案内は説明文も測り直した位置に置く
