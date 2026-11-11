@@ -1645,6 +1645,17 @@ body{
   window.addEventListener("resize",function(){if(!tourOn)return;clearTimeout(tourRz);tourRz=setTimeout(function(){if(tourOn)tourShow(tourI)},150)});
   document.getElementById("tourBtn").addEventListener("click",tourStart);
   // 初めて開いたときは、読み込みの完了を待たず、スクリプトが動いた時点で操作をロックして案内を始める（案内が出るまでの間にボタンを押せないように）
+  // 今日のテーマを先に読んでおく（匿名ログインと Database の接続もここで済む）。赤いボタンを押したとき、すぐ映せる。
+  // 日付が変わっていたら、アプリに戻ってきたときにもう一度読む。読めなかったときは何もしない（押したときに読む）。
+  function prefetchTheme(){
+    try{
+      var key=themeKey(0);
+      if(themeCache&&themeCache.key===key)return;
+      resolveTheme(key).then(function(r){if(r&&r.cache&&themeKey(0)===key)themeCache={key:key,text:r.text}}).catch(function(){});
+    }catch(e){}
+  }
+  prefetchTheme();
+  document.addEventListener("visibilitychange",function(){if(!document.hidden)prefetchTheme()});
   if(!tourSeen())tourStart();
   // （読み込みで見た目が変わる分は、tourShow の中で「出す直前に測り直す」ので、ここでの再実行はしない）
 
