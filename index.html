@@ -262,7 +262,9 @@ body{
   box-shadow:0 1px 0 var(--sq-edge),0 0 0 0 rgba(46,224,106,0);
   transition:box-shadow .45s ease-out;pointer-events:none}
 .chart.on{box-shadow:0 1px 0 var(--sq-edge),0 0 calc(var(--s)*.05) calc(var(--s)*.004) rgba(46,224,106,.28);transition-duration:.08s}
-.chart svg{display:block;width:100%;height:auto;border-radius:calc(var(--s)*.02);background:linear-gradient(180deg,#1c2620,#0c120e)}
+.chart .gl{position:relative;overflow:hidden;border-radius:calc(var(--s)*.02);background:linear-gradient(180deg,#1c2620,#0c120e)}
+.chart svg{display:block;width:100%;height:auto}
+.chart .sc{position:absolute;left:0;top:0;height:100%}
 .chart::before{ /* 点灯したときの画面のにじむ発光 */
   content:"";position:absolute;inset:calc(var(--s)*.014);border-radius:calc(var(--s)*.02);z-index:1;pointer-events:none;
   background:radial-gradient(ellipse at 50% 55%,rgba(46,224,106,.32),rgba(46,224,106,.07) 70%);
@@ -273,8 +275,8 @@ body{
   content:"";position:absolute;inset:0;border-radius:inherit;z-index:2;pointer-events:none;
   background:linear-gradient(115deg,rgba(255,255,255,.17) 0,rgba(255,255,255,.04) 36%,rgba(255,255,255,0) 37%);
   box-shadow:inset 0 0 calc(var(--s)*.016) rgba(0,0,0,.6),inset 0 calc(var(--s)*.008) calc(var(--s)*.012) rgba(0,0,0,.3),inset 0 0 0 1px var(--sq-groove)}
-.chart .c{opacity:0;transition:opacity .5s ease-out}
-.chart.on .c{opacity:1;transition-duration:.1s}
+.chart .cv{opacity:0;transition:opacity .5s ease-out;will-change:opacity}
+.chart.on .cv{opacity:1;transition-duration:.1s}
 .chart .t.e{fill:#ffa628}
 .chart .t{fill:#5fe48a;font:600 8px ui-monospace,Menlo,Consolas,monospace;opacity:.6}
 .chart .l{stroke:rgba(94,228,138,.17);stroke-width:.6}
@@ -324,7 +326,7 @@ body{
 @keyframes mdblink{50%{opacity:.35}}
 .md:focus-visible{outline:3px solid var(--cap-hi);outline-offset:4px}
 @media (prefers-reduced-motion:reduce){.md,.md.pushed,.md.pressing{transition-duration:.01s}}
-.chart.rise.on .c{transition-duration:.7s}.chart.rise.on{transition-duration:.7s} /* 赤いボタンのあと、グラフがゆっくり浮かび上がる */
+.chart.rise.on .cv{transition-duration:.7s}.chart.rise.on{transition-duration:.7s} /* 赤いボタンのあと、グラフがゆっくり浮かび上がる */
 /* ===== 使い方の案内：画面を暗くして、紹介するボタンの周りだけ明るくする ===== */
 .tour{position:fixed;inset:0;z-index:40;font-family:system-ui,-apple-system,"Hiragino Sans",sans-serif}
 .tour[hidden]{display:none}
@@ -1341,10 +1343,10 @@ body{
     var my=(mine.day===themeKey(0)&&mine.s[graphSrc()])||{};
     list.forEach(function(p){var u=p.k.split("_");p.me=(+u[1])<(my[u[0]]||0)}); // 1つの区間のうち、自分の分の点
     list.sort(function(a,b){return a.t-b.t});
-    var svg='<svg viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">'
+    var svg='<div class="gl"><svg class="cv" viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">'
       +'<defs><radialGradient id="dg"><stop offset="0" stop-color="#f4fff7"/><stop offset=".22" stop-color="#7dffa6"/><stop offset=".55" stop-color="#2ee06a"/><stop offset="1" stop-color="#2ee06a" stop-opacity="0"/></radialGradient>'
       +'<radialGradient id="dgb"><stop offset="0" stop-color="#f2f8ff"/><stop offset=".22" stop-color="#8cc8ff"/><stop offset=".55" stop-color="#3a8cff"/><stop offset="1" stop-color="#3a8cff" stop-opacity="0"/></radialGradient>'
-      +'<pattern id="sl" width="4" height="3" patternUnits="userSpaceOnUse"><rect width="4" height="1" y="2" fill="#000" opacity=".22"/></pattern></defs>'
+      +'</defs>'
       +'<g class="c"><line class="l" x1="'+L+'" x2="'+(W-R)+'" y1="'+(T+ph)+'" y2="'+(T+ph)+'"/>';
     // 6時間ごとの目盛り（日本時間の 0・6・12・18・24 時）
     for(var h=0;h<=24;h+=6){
@@ -1381,9 +1383,15 @@ body{
     svg+=dots+dotsMe; // 自分の青い点は、いちばん上に描く
     // 点がないとき：読み込み中なら LOADING…、読み込みが終わって本当に何もなければ NO DATA
     if(!list.length)svg+='<text class="t" text-anchor="middle" x="'+(W/2)+'" y="'+(T+ph/2+3)+'">'+(loadingN>0?'LOADING…':'NO DATA')+'</text>';
-    chartEl.innerHTML=svg+'</g><rect width="'+W+'" height="'+H+'" fill="url(#sl)"/></svg>';
+    chartEl.innerHTML=svg+'</g></svg>'+scanSvg(W,H)+'</div>';
   }
   // 画面を点灯しているのが、グラフ(白ボタン)かテーマ(古びたボタン)か。消すときは自分が点けた分だけ消す。
+  // 液晶の走査線。中身(.cv)のフェードとは別のSVGにして、常に最前面に出しておく（透明度を動かす対象に含めない）。
+  function scanSvg(W,H){
+    return '<svg class="sc" aria-hidden="true" viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">'
+      +'<defs><pattern id="sl" width="4" height="3" patternUnits="userSpaceOnUse"><rect width="4" height="1" y="2" fill="#000" opacity=".22"/></pattern></defs>'
+      +'<rect width="'+W+'" height="'+H+'" fill="url(#sl)"/></svg>';
+  }
   var screenMode="";
   function lightOn(m){screenMode=m;chartEl.classList.add("on")}
   function lightOff(m){if(screenMode===m){screenMode="";chartEl.classList.remove("on")}}
@@ -1510,10 +1518,9 @@ body{
       body=tx.replace('<text ','<text fill="'+c1+'" filter="url(#tg)" ')+tx.replace('<text ','<text fill="'+c2+'" ')
         +'<text class="t'+(err?' e':'')+'" x="12" y="14">'+(err?'ERROR':(label||'THEME'))+'</text><text class="t'+(err?' e':'')+'" text-anchor="end" x="'+(W-12)+'" y="14">'+escSvg(corner!==undefined?corner:key.slice(5).replace("-","/"))+'</text>';
     }
-    chartEl.innerHTML='<svg viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">'
-      +'<defs><filter id="tg" x="-20%" y="-60%" width="140%" height="220%"><feGaussianBlur stdDeviation="3.2"/></filter>'
-      +'<pattern id="sl" width="4" height="3" patternUnits="userSpaceOnUse"><rect width="4" height="1" y="2" fill="#000" opacity=".22"/></pattern></defs>'
-      +'<g class="c">'+body+'</g><rect width="'+W+'" height="'+H+'" fill="url(#sl)"/></svg>';
+    chartEl.innerHTML='<div class="gl"><svg class="cv" viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">'
+      +'<defs><filter id="tg" x="-20%" y="-60%" width="140%" height="220%"><feGaussianBlur stdDeviation="3.2"/></filter></defs>'
+      +'<g class="c">'+body+'</g></svg>'+scanSvg(W,H)+'</div>';
   }
   // 「だれかと」のあいだは、テーマの代わりにペアの状態を映す（ペアが決まっていれば「ペアが決まっています」）
   function pairScreen(){
