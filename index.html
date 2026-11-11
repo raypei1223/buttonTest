@@ -819,12 +819,19 @@ body{
   var authP=null;
   function ensureAuth(){
     if(!auth)return Promise.reject(new Error("no firebase"));
-    if(!authP){authP=new Promise(function(res,rej){
-      var un=auth.onAuthStateChanged(function(u){
-        if(u){un();res(u)}
-        else auth.signInAnonymously().catch(function(e){dbg("匿名ログイン",e);un();authP=null;rej(e)});
+    if(auth.currentUser)return Promise.resolve(auth.currentUser);
+    if(!authP){
+      var mine,unsub=null;
+      mine=authP=new Promise(function(res,rej){
+        var un=auth.onAuthStateChanged(function(u){
+          if(u){un();res(u)}
+          else auth.signInAnonymously().catch(function(e){dbg("匿名ログイン",e);un();authP=null;rej(e)});
+        });
+        unsub=un;
       });
-    })}
+      // 返事が来ないまま止まったときに、ずっと同じ待ちを使い回さない（次の呼び出しでやり直せるようにする）
+      setTimeout(function(){if(authP===mine&&!auth.currentUser){authP=null;try{if(unsub)unsub()}catch(e){}}},8000);
+    }
     return authP;
   }
 
@@ -1451,8 +1458,11 @@ body{
     var flow=fetchThemeList().then(function(r){
       if(!r.ok)return def;
       var day=dayOfKey(key),use=themesAt(r.list,day);
-      if(!use.length)return{text:DEFAULT_THEME,cache:true};
-      return{text:pickTheme(use,day).text,cache:true};
+      var res=use.length?{text:pickTheme(use,day).text,cache:true}:{text:DEFAULT_THEME,cache:true};
+      // 4秒を過ぎて届いた分も捨てない：覚えておき、「読み込めませんでした」を出していたら映し直す
+      themeCache={key:key,text:res.text};
+      if(themeOn&&screenMode==="theme"&&themeKey(0)===key&&!(mode==="pair"&&pairState==="paired"))renderTheme(res.text,key);
+      return res;
     });
     var to=new Promise(function(res){setTimeout(function(){res(def)},4000)}); // 圏外で待ち続けないように
     return Promise.race([flow,to]);
@@ -1505,10 +1515,16 @@ body{
     if(themeCache&&themeCache.key===key)renderTheme(themeCache.text,key);
     else{
       renderTheme(null,key);
-      resolveTheme(key).then(function(r){
-        if(r.cache)themeCache={key:key,text:r.text};
-        if(themeOn&&screenMode==="theme"&&themeKey(0)===key)renderTheme(r.text,key,r.error);
-      });
+      (function tryTheme(n){
+        resolveTheme(key).then(function(r){
+          if(r.cache)themeCache={key:key,text:r.text};
+          if(themeOn&&screenMode==="theme"&&themeKey(0)===key)renderTheme(r.text,key,r.error);
+          // 読み込めなかったら、画面を出している間は3秒おきに最大3回やり直す
+          if(r.error&&n<3)setTimeout(function(){
+            if(themeOn&&screenMode==="theme"&&themeKey(0)===key&&!(themeCache&&themeCache.key===key))tryTheme(n+1);
+          },3000);
+        });
+      })(0);
     }
     lightOn("theme");
   }
