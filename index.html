@@ -292,6 +292,19 @@ body{
 .sclose:focus-visible,.sw:focus-visible{outline:3px solid #4b7bec;outline-offset:2px}
 .srow{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-top:1px solid rgba(0,0,0,.1)}
 .slabel{font-size:15px}
+.sgrp{display:flex;align-items:center;justify-content:flex-start;gap:10px;flex:1 1 0;min-width:0}
+.sgrp+.sgrp{margin-left:24px}
+.ylcd{position:relative;border-radius:8px;overflow:hidden;background:linear-gradient(180deg,#1c2620,#0c120e);margin:6px 0 10px}
+.ylcd .gl{position:relative}
+.ylcd svg{display:block;width:100%;height:auto}
+.ylcd .sc{position:absolute;left:0;top:0;height:100%}
+.ylcd .t{fill:#5fe48a;font:600 8px ui-monospace,Menlo,Consolas,monospace;opacity:.6}
+.ylcd .l{stroke:rgba(94,228,138,.17);stroke-width:.6}
+.ylcd .cv{opacity:1}
+.ysec{border-top:1px solid rgba(0,0,0,.1);padding:10px 0}
+.ysec[hidden]{display:none}
+.ylab{font-size:12px;opacity:.6}
+.yval{font-size:15px;margin-top:2px;white-space:pre-line}
 .sw{all:unset;cursor:pointer;position:relative;width:48px;height:28px;border-radius:14px;background:#b4b7b0;transition:background .2s;-webkit-tap-highlight-color:transparent}
 .sw .knob{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.35);transition:transform .2s}
 .sw[aria-checked="true"]{background:#34a853}
@@ -373,9 +386,11 @@ body{
 <div class="settings" id="settings" hidden>
   <div class="spanel" role="dialog" aria-modal="false" aria-labelledby="stitle">
     <div class="shead"><h2 id="stitle">設定</h2><button class="sclose" id="sclose" type="button" aria-label="閉じる">✕</button></div>
-    <div class="srow"><span class="slabel" id="slabelSnd">音</span><button class="sw" id="soundSw" type="button" role="switch" aria-checked="true" aria-labelledby="slabelSnd"><span class="knob"></span></button></div>
-    <div class="srow"><span class="slabel" id="slabel">通知</span><button class="sw" id="notifySw" type="button" role="switch" aria-checked="false" aria-labelledby="slabel"><span class="knob"></span></button></div>
-    <div class="srow"><span class="slabel">使い方</span><button class="sbtn" id="tourBtn" type="button">見る</button></div>
+    <div class="srow">
+      <div class="sgrp"><span class="slabel" id="slabelSnd">音</span><button class="sw" id="soundSw" type="button" role="switch" aria-checked="true" aria-labelledby="slabelSnd"><span class="knob"></span></button></div>
+      <div class="sgrp"><span class="slabel" id="slabel">通知</span><button class="sw" id="notifySw" type="button" role="switch" aria-checked="false" aria-labelledby="slabel"><span class="knob"></span></button></div>
+    </div>
+    <div class="srow"><div class="srow2"><button class="sbtn" id="tourBtn" type="button">使い方</button><button class="sbtn" id="prevBtn" type="button">昨日の結果</button></div></div>
     <div class="ssec">
       <h3>テーマ応募</h3>
       <div class="srow2" style="margin-bottom:6px"><button class="sbtn seg on" id="kindCrowd" type="button">みんなで</button><button class="sbtn seg" id="kindPair" type="button">だれかと</button></div>
@@ -395,6 +410,14 @@ body{
       <div id="themeAdmin" hidden></div>
       <div class="srow2" style="margin-top:8px"><button class="sbtn" id="adminOut" type="button">管理者をやめる</button></div>
     </div>
+  </div>
+</div>
+<div class="settings" id="ydlg" hidden>
+  <div class="spanel" role="dialog" aria-modal="false" aria-labelledby="ytitle">
+    <div class="shead"><h2 id="ytitle">昨日の記録</h2><button class="sclose" id="yclose" type="button" aria-label="閉じる">✕</button></div>
+    <div class="ylcd" id="ylcd"></div>
+    <div class="ysec"><div class="ylab">テーマ</div><div class="yval" id="ytheme"></div></div>
+    <div class="ysec" id="ypair" hidden><div class="ylab">だれかと</div><div class="yval" id="ypairtxt"></div></div>
   </div>
 </div>
 <div class="tour" id="tour" role="dialog" aria-modal="true" aria-label="使い方" hidden>
@@ -1067,7 +1090,7 @@ body{
   var usingKbd=false;
   document.addEventListener("keydown",function(){usingKbd=true},true);
   document.addEventListener("pointerdown",function(){usingKbd=false},true);
-  function openSettings(){settingsEl.hidden=false;settingsOpenedAt=Date.now();if(usingKbd){try{notifySw.focus()}catch(e){}}checkAdmin()}
+  function openSettings(){closePrev();settingsEl.hidden=false;settingsOpenedAt=Date.now();if(usingKbd){try{notifySw.focus()}catch(e){}}checkAdmin()}
   function closeSettings(){settingsEl.hidden=true;gateEl.hidden=true;adminPass.value="";if(usingKbd){try{gm.focus()}catch(e){}}}
   // 黒いボタン：閉じているときは開く。開いているときにもう一度押すと、すぐに閉じる。
   function toggleSettings(){
@@ -1392,6 +1415,7 @@ body{
       Object.keys(bb).forEach(function(k){var v=bb[k],i=parseInt(k,10);if(typeof v==="number"&&v>0&&i>=0&&i<288)c[i]=v});
       if(countsDay!==dk||countsSrc!==src){unacked={};unackedBase={}}
       counts=c;countsDay=dk;countsSrc=src;
+      archCounts(src,c,r,paired);
       if(r&&typeof r.ach==="number")achKnown=r.ach|0;
       if(paired&&r&&r.pid){ // 「だれかと」のチャレンジ：今日のテーマ（無ければ null）と達成数
         var prev=pairInfoNow();
@@ -1404,6 +1428,25 @@ body{
   // 自分が押した分の記録（この端末のなか。日ごと・みんなで/ペアごと・5分ごとの回数）。グラフでは自分の点を青く描く。
   var MINE_KEY="button_mine",mine={day:"",s:{}};
   try{var mm0=JSON.parse(localStorage.getItem(MINE_KEY)||"null");if(mm0&&mm0.day&&mm0.s)mine=mm0}catch(e){}
+  // ===== 前日の記録（この端末のなか） =====
+  // 今日の分は、グラフやテーマを読めたときに arch へ控えておく。日付が変わって最初に開いたとき、前日の arch を prev として残す（前々日以前は捨てる）。
+  var ARCH_KEY="button_arch",PREV_KEY="button_prev",PREVSEEN_KEY="button_prev_seen",arch={day:""},prev=null;
+  function lsGet(k){try{return JSON.parse(localStorage.getItem(k)||"null")}catch(e){return null}}
+  function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+  function archSave(){if(arch.day===themeKey(0))lsSet(ARCH_KEY,arch)}
+  (function(){
+    var today=themeKey(0),a=lsGet(ARCH_KEY);
+    if(a&&a.day===today){arch=a;prev=lsGet(PREV_KEY);return}
+    if(a&&a.day===themeKey(-1)){a.mine=(mine.day===a.day&&mine.s)?mine.s:{};prev=a;lsSet(PREV_KEY,prev)}
+    else{prev=null;try{localStorage.removeItem(PREV_KEY)}catch(e){}}
+    arch={day:today};lsSet(ARCH_KEY,arch);
+  })();
+  function archCounts(src,c,r,paired){ // 読めた5分ごとの回数（と、ペアならチャレンジと達成数）を控える
+    if(arch.day!==themeKey(0))return;
+    if(paired)arch.pair={src:src,pid:(r&&r.pid)||null,counts:c,theme:(r&&typeof r.theme==="string"&&r.theme)?r.theme:null,ach:((r&&r.ach)|0),today:!!(r&&r.achToday)};
+    else arch.crowd={counts:c};
+    archSave();
+  }
   function mineAdd(dk,src,b,d){
     if(mine.day!==dk)mine={day:dk,s:{}};
     var o=mine.s[src]||(mine.s[src]={});o[b]=Math.max(0,(o[b]||0)+d);if(!o[b])delete o[b];
@@ -1411,22 +1454,24 @@ body{
   }
   function seeded(seed){var a=seed>>>0;return function(){a=(a+0x6D2B79F5)>>>0;var t=a;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296}}
   function hashKey(k){var h=5381;for(var i=0;i<k.length;i++)h=((h<<5)+h+k.charCodeAt(i))|0;return h}
-  function renderChart(){
+  function renderChart(ov,target){ // ov: 昨日の記録 {day,counts,my} を描くとき / target: 描く先（省略すると液晶）
     var W=320,H=84,L=10,R=10,T=10,B=17,pw=W-L-R,ph=H-T-B,DAY=86400000,JST=9*3600000;
     // 範囲は「その日の0時〜翌0時」（日本時間 JST。端末のタイムゾーンには左右されない）。日付が変わると、グラフは空に戻る。
     var now=Date.now()+serverOff,t0=Math.floor((now+JST)/DAY)*DAY-JST,t1=t0+DAY,SPAN=DAY,list=[];
-    if(countsDay===themeKey(0)&&countsSrc===graphSrc()){ // 5分ごとの回数 → 点（1回につき1個。1つの区間に出す点は最大 MAXDOTS 個）
+    if(ov){t0=dayOfKey(ov.day)*DAY-JST;t1=t0+DAY;now=t1}
+    if(ov||(countsDay===themeKey(0)&&countsSrc===graphSrc())){ // 5分ごとの回数 → 点（1回につき1個。1つの区間に出す点は最大 MAXDOTS 個）
       var bs={};
-      Object.keys(counts).forEach(function(b){bs[b]=counts[b]});
-      var my0=(mine.day===countsDay&&mine.s[countsSrc])||{};
+      var cs=ov?ov.counts:counts;
+      Object.keys(cs).forEach(function(b){bs[b]=cs[b]});
+      var my0=ov?ov.my:((mine.day===countsDay&&mine.s[countsSrc])||{});
       Object.keys(my0).forEach(function(b){if(+b>=0&&+b<288)bs[b]=Math.max(bs[b]||0,my0[b])}); // 自分の押した分は必ず点にする
-      Object.keys(unacked).forEach(function(b){if(unacked[b]>0)bs[b]=Math.max(bs[b]||0,(unackedBase[b]||0)+unacked[b])}); // サーバーの数が自分の分を含んでいれば、そのまま（足さない）
+      if(!ov)Object.keys(unacked).forEach(function(b){if(unacked[b]>0)bs[b]=Math.max(bs[b]||0,(unackedBase[b]||0)+unacked[b])}); // サーバーの数が自分の分を含んでいれば、そのまま（足さない）
       Object.keys(bs).forEach(function(b){
         var t=Math.min(t0+(+b+.5)*BUCKET,now),n=Math.min(bs[b],MAXDOTS);
         if(t>=t0&&t<t1)for(var i=0;i<n;i++)list.push({k:b+"_"+i,t:t});
       });
     }
-    var my=(mine.day===themeKey(0)&&mine.s[graphSrc()])||{};
+    var my=ov?ov.my:((mine.day===themeKey(0)&&mine.s[graphSrc()])||{});
     list.forEach(function(p){var u=p.k.split("_");p.me=(+u[1])<(my[u[0]]||0)}); // 1つの区間のうち、自分の分の点
     list.sort(function(a,b){return a.t-b.t});
     var svg='<div class="gl"><svg class="cv" viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">'
@@ -1441,7 +1486,7 @@ body{
     }
     // 今の時刻を表す細い縦線（点より下に描く）
     var nx=L+Math.min(1,Math.max(0,(now-t0)/SPAN))*pw;
-    svg+='<line class="now" x1="'+nx.toFixed(1)+'" x2="'+nx.toFixed(1)+'" y1="'+T+'" y2="'+(T+ph)+'"/>';
+    if(!ov)svg+='<line class="now" x1="'+nx.toFixed(1)+'" x2="'+nx.toFixed(1)+'" y1="'+T+'" y2="'+(T+ph)+'"/>';
     // 点：近くに点がなければ縦の真ん中。近くに点があると、乱数（キー由来なので毎回同じ位置）で縦にずらす。点が増えるほど、ずらす範囲が広がる。
     var placed=[],yMin=T+4,yMax=T+ph-4,yMid=(yMin+yMax)/2,GAP=9,dots='',dotsMe=''; // GAP: これより近いと「重なりそう」（点の半径4.2の2個分＋少し）
     function nearest(x,y){ // いちばん近い既存の点までの距離（x は左から右へ並ぶので、離れたら打ち切れる）
@@ -1480,8 +1525,8 @@ body{
     });
     svg+=dots+dotsMe; // 自分の青い点は、いちばん上に描く
     // 点がないとき：読み込み中なら LOADING…、読み込みが終わって本当に何もなければ NO DATA
-    if(!list.length)svg+='<text class="t" text-anchor="middle" x="'+(W/2)+'" y="'+(T+ph/2+3)+'">'+(loadingN>0?'LOADING…':'NO DATA')+'</text>';
-    chartEl.innerHTML=svg+'</g></svg>'+scanSvg(W,H)+'</div>';
+    if(!list.length)svg+='<text class="t" text-anchor="middle" x="'+(W/2)+'" y="'+(T+ph/2+3)+'">'+(!ov&&loadingN>0?'LOADING…':'NO DATA')+'</text>';
+    (target||chartEl).innerHTML=svg+'</g></svg>'+scanSvg(W,H)+'</div>';
   }
   // 画面を点灯しているのが、グラフ(白ボタン)かテーマ(古びたボタン)か。消すときは自分が点けた分だけ消す。
   // 液晶の走査線。中身(.cv)のフェードとは別のSVGにして、常に最前面に出しておく（透明度を動かす対象に含めない）。
@@ -1519,11 +1564,12 @@ body{
   var THEME_KEY="button_theme_day";
   function setThemeCache(key,text){
     themeCache={key:key,text:text};
+    if(key===arch.day){arch.theme=text;archSave()}
     try{localStorage.setItem(THEME_KEY,JSON.stringify(themeCache))}catch(e){}
   }
   try{
     var tc0=JSON.parse(localStorage.getItem(THEME_KEY)||"null");
-    if(tc0&&typeof tc0.text==="string"&&tc0.text&&tc0.key===themeKey(0))themeCache=tc0;
+    if(tc0&&typeof tc0.text==="string"&&tc0.text&&tc0.key===themeKey(0)){themeCache=tc0;if(arch.day===tc0.key&&arch.theme!==tc0.text){arch.theme=tc0.text;archSave()}}
     else if(tc0)localStorage.removeItem(THEME_KEY);
   }catch(e){}
   function themeKey(addDays){
@@ -1685,11 +1731,11 @@ body{
   var TOUR=[
     {ids:["btn"],sel:".well",pad:12,leds:true,lines:function(){return[{t:"１日に１度だけ押せる"},{t:"残り数＝光っているLED"}]}},
     {ids:["sq"],pad:16,screen:"chart",lines:function(){return[{t:"他の人の押したタイミングを見る"}]}},
-    {ids:["rb"],pad:16,screen:"theme",lines:function(){return[{t:"今日のテーマを見る"},{t:"テーマを満たした時にボタンを押してみるのもアリ"}]}},
+    {ids:["rb"],pad:16,screen:"theme",lines:function(){return[{t:"今日のテーマを見る"},{t:"テーマに沿ったタイミングで押してもよし、沿わなくてもよし"}]}},
     {ids:["md"],lines:function(){var p=(mode==="pair");return[
       {t:"モード切替え",c:"tt"},
-      {t:"みんなで：最大100人のグループ。\nテーマに沿って押してもよし、\n押さなくてもよし",c:p?"":"cur"},
-      {t:"だれかと：ランダムな一人とペアになる。\n１日１回ボタンを押し、\n通知を送り合うことができる",c:p?"cur":""}]}},
+      {t:"みんなで：最大100人のグループ。\nいつ押す人が多いのか見てみよう",c:p?"":"cur"},
+      {t:"だれかと：ランダムな誰かとペアになる。\n互いに押した時に通知が届く。\nチャレンジにも挑戦してみよう",c:p?"cur":""}]}},
     {ids:["gm"],lines:function(){return[{t:"設定を開く（使い方をもう一度見る）"}]}}
   ];
   function tourSeen(){try{return localStorage.getItem(TOUR_KEY)==="1"}catch(e){return false}}
@@ -1829,7 +1875,66 @@ body{
   }
   prefetchTheme();
   document.addEventListener("visibilitychange",function(){if(!document.hidden)prefetchTheme()});
+  // ===== 前日の記録を見せる：前日に押していて、その日の最初に開いたときだけ自動で出す =====
+  var ydlg=document.getElementById("ydlg"),ylcd=document.getElementById("ylcd"),ytitle=document.getElementById("ytitle"),
+      ytheme=document.getElementById("ytheme"),ypair=document.getElementById("ypair"),ypairtxt=document.getElementById("ypairtxt");
+  function prevMine(src){var o=prev&&prev.mine&&src&&prev.mine[src];return !!o&&Object.keys(o).some(function(b){return o[b]>0})}
+  function pressedPrev(){return !!prev&&!!prev.mine&&Object.keys(prev.mine).some(prevMine)}
+  var prevTok=0;
+  function cleanCounts(bb){var c={};bb=bb||{};Object.keys(bb).forEach(function(k){var v=bb[k],i=parseInt(k,10);if(typeof v==="number"&&v>0&&i>=0&&i<288)c[i]=v});return c}
+  function openPrev(){
+    var tok=++prevTok;
+    if(!prev||prev.day!==themeKey(-1))prev={day:themeKey(-1),mine:{},crowd:null,pair:null,theme:null}; // 自分が押していなくても見られる（Worker から昨日の結果を読む）
+    var ps=prev.pair?prev.pair.src:null;
+    if(!ps&&prev.mine)Object.keys(prev.mine).forEach(function(k){if(!ps&&k.indexOf("pair:")===0)ps=k}); // 控えがなくても、自分の記録からペアの分を探す
+    var hasC=prevMine("crowd"),hasP=!!ps&&prevMine(ps);
+    // 自分が押した記録のあるほうを映す。どちらにもなければ、今のモードで決める
+    var useP=(hasP&&(mode==="pair"||!hasC))||(!hasC&&!hasP&&mode==="pair"&&pairState==="paired");
+    var src=useP?ps:"crowd";
+    var showPair=useP||mode==="pair";
+    // 最初は、この端末に控えてあった分で映す。Worker から昨日の最終結果が届いたら、そちらに差し替える
+    var pv={cnt:useP?(prev.pair?prev.pair.counts:{}):(prev.crowd?prev.crowd.counts:{}),theme:prev.theme||null,
+            pt:prev.pair?prev.pair.theme:null,pd:prev.pair?!!prev.pair.today:false,pa:prev.pair?(prev.pair.ach|0):0};
+    var my=(prev.mine&&src&&prev.mine[src])||{};
+    function paint(){
+      if(tok!==prevTok)return;
+      ytitle.textContent="昨日の記録 "+prev.day.slice(5).replace("-","/");
+      renderChart({day:prev.day,counts:pv.cnt,my:my},ylcd);
+      ytheme.textContent=pv.theme||"…";
+      ypair.hidden=!showPair;
+      if(showPair)ypairtxt.textContent="昨日のチャレンジ："+(pv.pt||"なし")+"\n昨日："+(pv.pt?(pv.pd?"達成！":"未達成"):"チャレンジなし")+"\n総達成数："+pv.pa+"回";
+    }
+    paint();
+    if(!pv.theme){ // 控えがなければ、一覧と日付から計算し直す
+      var pd=prev.day;
+      fetchThemeList().then(function(r){
+        if(tok!==prevTok||pv.theme)return;
+        if(!r.ok){ytheme.textContent="（読み込めませんでした）";return}
+        var d=dayOfKey(pd),u=themesAt(r.list,d);pv.theme=u.length?pickTheme(u,d).text:DEFAULT_THEME;paint();
+      }).catch(function(){if(tok===prevTok&&!pv.theme)ytheme.textContent="（読み込めませんでした）"});
+    }
+    // Worker に、昨日の最終結果を聞く（いつ開いても同じ結果）。読めなければ、控えのまま
+    if(!useP)pairCall("/pair/counts",{scope:"crowd",when:"yesterday"}).then(function(r){
+      if(!r||typeof r.b!=="object")return;
+      pv.cnt=cleanCounts(r.b);paint();
+    }).catch(function(e){dbg("昨日の記録(みんなで)",e)});
+    if(useP||showPair)pairCallAdmin("/pair/counts",{scope:"pair",when:"yesterday"}).then(function(r){
+      if(!r||r.state!=="paired")return; // 今はペアがいない：控えのまま
+      if(useP&&(!prev.pair||!prev.pair.pid||!r.pid||r.pid===prev.pair.pid))pv.cnt=cleanCounts(r.b); // 組が替わっていたら、グラフは控えのまま
+      if(typeof r.theme==="string"&&r.theme)pv.pt=r.theme;
+      pv.pd=!!r.achPrev;
+      if(typeof r.ach==="number")pv.pa=r.ach|0;
+      paint();
+    }).catch(function(e){dbg("昨日の記録(だれかと)",e)});
+    lsSet(PREVSEEN_KEY,prev.day);
+    ydlg.hidden=false;
+  }
+  function closePrev(){ydlg.hidden=true}
+  document.getElementById("yclose").addEventListener("click",closePrev);
+  document.getElementById("prevBtn").addEventListener("click",function(){closeSettings();openPrev()});
+  document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!ydlg.hidden)closePrev()});
   if(!tourSeen())tourStart();
+  else if(pressedPrev()&&lsGet(PREVSEEN_KEY)!==prev.day)openPrev();
   // （読み込みで見た目が変わる分は、tourShow の中で「出す直前に測り直す」ので、ここでの再実行はしない）
 
   renderChart(); // 消灯したガラスの画面を、最初から机に置いておく
