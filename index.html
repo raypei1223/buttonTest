@@ -648,7 +648,7 @@ body{
   ["pointerup","touchend","click","keyup"].forEach(function(t){document.addEventListener(t,unlockAudio,true)});
   function buzz(ms){try{if(navigator.vibrate)navigator.vibrate(ms)}catch(e){}}
 
-  // 緑のLED：押すたびに右から1個ずつ消える。「みんなで」は1日1回、「だれかと」は1日3回（回数はモードごとに別々に数える）。「だれかと」の3個は、相手が決まってから（相手を探している間は「みんなで」と同じ：1個・みんなでの記録・通知なし）
+  // 緑のLED：押すたびに右から1個ずつ消える。「みんなで」も「だれかと」も1日1回（回数はモードごとに別々に数える）。「だれかと」の分は、相手が決まってから（相手を探している間は「みんなで」と同じ：みんなでの記録・通知なし）
   var MODE_KEY="button_mode",PENDING_KEY="button_pair_leave";
   var mode="crowd";try{if(localStorage.getItem(MODE_KEY)==="pair")mode="pair"}catch(e){}
   var LED_COUNT=1,left=1,ledBox=document.getElementById("leds"),leds=[];
@@ -660,12 +660,12 @@ body{
   function saveUsed(n){try{localStorage.setItem(PRESS_KEY,JSON.stringify({d:today(),n:n}))}catch(e){}}
   function showLeds(){ledBox.setAttribute("aria-label","残り "+left)}
   function syncLeds(){for(var i=0;i<LED_COUNT;i++)leds[i].classList.toggle("on",i<left);showLeds()}
-  // LEDの種類：crowd=みんなで、または「だれかと」で相手を探している間(1個) / pair=「だれかと」で相手が決まっている(3個)
+  // LEDの種類：crowd=みんなで、または「だれかと」で相手を探している間(1個) / pair=「だれかと」で相手が決まっている(1個。回数はみんなでとは別に数える)
   var ledKind="crowd";
   function ledKindNow(){return(mode==="pair"&&pairState==="paired")?"pair":"crowd"}
   function buildLeds(){
     ledKind=ledKindNow();
-    LED_COUNT=ledKind==="pair"?3:1;PRESS_KEY=ledKind==="pair"?"button_press_day_pair":"button_press_day";
+    LED_COUNT=1;PRESS_KEY=ledKind==="pair"?"button_press_day_pair":"button_press_day";
     ledBox.textContent="";leds=[];
     for(var i=0;i<LED_COUNT;i++){
       var l=document.createElement("span");l.className="led on";
@@ -874,7 +874,7 @@ body{
 
   // ===== 「みんなで」と「だれかと」 =====
   // みんなで … 全員が同じ部屋。通知なし。1日1回。
-  // だれかと … ランダムに二人一組。1日3回。押すたびに相手へ通知。組み合わせはサーバー（Worker）が決める。
+  // だれかと … ランダムに二人一組。1日1回。押すと相手へ通知。組み合わせはサーバー（Worker）が決める。
   var md=document.getElementById("md"),pairState="none",pairPid=null,pairTimer=0,modeBusy=false,armedAt=0;
   function saveMode(m){mode=m;try{localStorage.setItem(MODE_KEY,m)}catch(e){}}
   function lamp(){
@@ -926,7 +926,7 @@ body{
   }
   function startPoll(){clearInterval(pairTimer);pairTimer=setInterval(function(){if(!document.hidden)pollPair(false)},30000)}
   function stopPoll(){clearInterval(pairTimer);pairTimer=0}
-  document.addEventListener("visibilitychange",function(){if(!document.hidden&&mode==="pair")pollPair(false)});
+  document.addEventListener("visibilitychange",function(){if(!document.hidden&&mode==="pair")pollPair(false).then(function(){if(mode==="pair"&&pairState==="paired")loadPresses()})});
 
   // 通知の購読を作って返す。通知が使えない・オフにしている・許可されない・失敗したときは null（通知なしで続ける）。
   // 許可の確認は ask が true で、まだ聞いていない（default）ときだけ。ブラウザの仕様で、ボタンを押した処理の中から直接呼ぶ必要がある。
@@ -1312,7 +1312,13 @@ body{
       var c={},bb=(r&&r.b)||{};
       Object.keys(bb).forEach(function(k){var v=bb[k],i=parseInt(k,10);if(typeof v==="number"&&v>0&&i>=0&&i<288)c[i]=v});
       if(countsDay!==dk||countsSrc!==src){unacked={};unackedBase={}}
-      counts=c;countsDay=dk;countsSrc=src;return true;
+      counts=c;countsDay=dk;countsSrc=src;
+      if(paired&&r&&typeof r.theme==="string"&&r.pid){ // 「だれかと」のチャレンジ：今日のテーマと達成数
+        var prev=pairInfoNow();
+        pairInfo={pid:r.pid,day:dk,theme:r.theme,ach:r.ach|0,today:!!r.achToday};
+        if(prev&&prev.pid===r.pid&&!prev.today&&r.achToday)say("今日のチャレンジを達成しました");
+      }
+      return true;
     }).catch(function(e){dbg("押した記録の読み込み",e);return false});
   }
   // 自分が押した分の記録（この端末のなか。日ごと・みんなで/ペアごと・5分ごとの回数）。グラフでは自分の点を青く描く。
@@ -1517,7 +1523,7 @@ body{
     return list[d[day%n]];
   }
   function escSvg(t){return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
-  function renderTheme(text,key,err,label,corner){ // label / corner: 左上・右上の小さい文字（省略すると THEME と日付）
+  function renderTheme(text,key,err,label,corner,foot){ // label / corner: 左上・右上の小さい文字（省略すると THEME と日付）/ foot: {l,r} 左下・右下の小さい文字（省略可）
     var W=320,H=84,maxW=W-32,body;
     var c1=err?"#ffa628":"#2ee06a",c2=err?"#ffe2b0":"#c8ffd8";
     if(err)text="テーマを読み込めませんでした";
@@ -1529,19 +1535,33 @@ body{
       var tx='<text text-anchor="middle" x="'+(W/2)+'" y="'+(H/2+size*.36+2)+'" font-size="'+size.toFixed(1)+'" font-weight="700" font-family="system-ui,\'Hiragino Sans\',\'Yu Gothic\',\'Noto Sans JP\',sans-serif"'+fit+'>'+escSvg(text)+'</text>';
       body=tx.replace('<text ','<text fill="'+c1+'" filter="url(#tg)" ')+tx.replace('<text ','<text fill="'+c2+'" ')
         +'<text class="t'+(err?' e':'')+'" x="12" y="14">'+(err?'ERROR':(label||'THEME'))+'</text><text class="t'+(err?' e':'')+'" text-anchor="end" x="'+(W-12)+'" y="14">'+escSvg(corner!==undefined?corner:key.slice(5).replace("-","/"))+'</text>';
+      if(foot&&!err){
+        if(foot.l)body+='<text class="t" x="12" y="'+(H-8)+'">'+escSvg(foot.l)+'</text>';
+        if(foot.r)body+='<text class="t" text-anchor="end" x="'+(W-12)+'" y="'+(H-8)+'">'+escSvg(foot.r)+'</text>';
+      }
     }
     chartEl.innerHTML='<div class="gl"><svg class="cv" viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">'
       +'<defs><filter id="tg" x="-20%" y="-60%" width="140%" height="220%"><feGaussianBlur stdDeviation="3.2"/></filter></defs>'
       +'<g class="c">'+body+'</g></svg>'+scanSvg(W,H)+'</div>';
   }
-  // 「だれかと」のあいだは、テーマの代わりにペアの状態を映す（ペアが決まっていれば「ペアが決まっています」）
+  // ===== 「だれかと」のチャレンジ（ペアのテーマ） =====
+  // 今日のチャレンジと、このペアの達成数は、Worker が決めて数える（/pair/counts の返事に入っている）。ここでは、読めた分を覚えて映すだけ。
+  var pairInfo=null; // {pid:組の印, day:日付, theme:今日のチャレンジ, ach:達成数, today:今日は達成したか}
+  function pairInfoNow(){return(pairInfo&&pairInfo.pid===pairPid&&pairInfo.day===themeKey(0))?pairInfo:null}
+  // 「だれかと」でペアが決まっているあいだは、古びたボタンで、今日のチャレンジと、このペアの達成数を映す（待機中は「みんなで」と同じ今日のテーマ）
   function pairScreen(){
-    var paired=(pairState==="paired");
-    renderTheme(paired?"ペアが決まっています":"相手を探しています",themeKey(0),false,"PAIR",paired?"2/2":"1/2");
+    var pi=pairInfoNow();
+    renderTheme(pi?pi.theme:null,themeKey(0),false,"PAIR THEME",undefined,pi?{l:pi.today?"今日：達成！":"今日：まだ",r:"達成 "+pi.ach+"回"}:undefined);
   }
   function showTheme(){
     themeOn=true;var key=themeKey(0);
-    if(mode==="pair"&&pairState==="paired"){pairScreen();lightOn("theme");return} // 待機中は「みんなで」と同じ（今日のテーマ）
+    if(mode==="pair"&&pairState==="paired"){ // 待機中は「みんなで」と同じ（今日のテーマ）
+      pairScreen();lightOn("theme");
+      loadPresses().then(function(){ // 今日のチャレンジと達成数を読み直す。まだ同じ画面を出していれば、映し直す
+        if(themeOn&&screenMode==="theme"&&mode==="pair"&&pairState==="paired")pairScreen();
+      });
+      return;
+    }
     if(themeCache&&themeCache.key===key)renderTheme(themeCache.text,key);
     else{
       renderTheme(null,key);
@@ -1574,7 +1594,7 @@ body{
     {ids:["md"],lines:function(){var p=(mode==="pair");return[
       {t:"モード切替え",c:"tt"},
       {t:"みんなで：最大100人のグループ。\nテーマに沿って押してもよし、\n押さなくてもよし",c:p?"":"cur"},
-      {t:"だれかと：ランダムな一人とペアになる。\n１日３回までボタンを押し、\n通知を送り合うことができる",c:p?"cur":""}]}},
+      {t:"だれかと：ランダムな一人とペアになる。\n１日１回ボタンを押し、\n通知を送り合うことができる",c:p?"cur":""}]}},
     {ids:["gm"],lines:function(){return[{t:"設定を開く（使い方をもう一度見る）"}]}}
   ];
   function tourSeen(){try{return localStorage.getItem(TOUR_KEY)==="1"}catch(e){return false}}
