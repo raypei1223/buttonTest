@@ -1367,6 +1367,7 @@ body{
       return score;
     }
     // 近く（左 WIN の範囲）に点が多いほど、縦に散らばる範囲を真ん中から上下へ広げる。FULL 個以上で全体の高さを使う。
+    // 広がり具合は点ごとに乱数（キー由来なので毎回同じ）でばらつかせ、ときどき大きく外れる点も出す。
     var WIN=18,FULL=12,halfMax=(yMax-yMin)/2;
     function crowd(x){ // 近くにすでにある点の数
       var n=0;
@@ -1376,7 +1377,10 @@ body{
     list.forEach(function(p){
       var x=L+(p.t-t0)/SPAN*pw,best=yMid,n=crowd(x);
       if(n>0){
-        var rnd=seeded(hashKey(p.k)),bestScore=-1,half0=halfMax*Math.min(1,n/FULL);
+        var rnd=seeded(hashKey(p.k)),bestScore=-1,
+            k=0.5+rnd()*0.9, // 点ごとの広がり具合：0.5〜1.4倍（同じ混み具合でも、近くに寄る点と離れる点が出る）
+            half0=Math.min(halfMax,halfMax*Math.min(1,n/FULL)*k);
+        if(rnd()<0.12)half0=Math.min(halfMax,half0*2.2); // ときどき、大きく外れる点も出す
         for(var c=0;c<24;c++){
           var half=half0+(halfMax-half0)*(c/23), // 重ならない位置が見つからなければ、少しずつ範囲を広げて探す
               y=yMid+(rnd()*2-1)*half,score=nearest(x,y);
