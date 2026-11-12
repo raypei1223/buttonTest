@@ -1392,6 +1392,7 @@ body{
       Object.keys(bb).forEach(function(k){var v=bb[k],i=parseInt(k,10);if(typeof v==="number"&&v>0&&i>=0&&i<288)c[i]=v});
       if(countsDay!==dk||countsSrc!==src){unacked={};unackedBase={}}
       counts=c;countsDay=dk;countsSrc=src;
+      if(r&&typeof r.ach==="number")achKnown=r.ach|0;
       if(paired&&r&&r.pid){ // 「だれかと」のチャレンジ：今日のテーマ（無ければ null）と達成数
         var prev=pairInfoNow();
         pairInfo={pid:r.pid,day:dk,theme:(typeof r.theme==="string"&&r.theme)?r.theme:null,ach:r.ach|0,today:!!r.achToday};
@@ -1627,6 +1628,18 @@ body{
   // ===== 「だれかと」のチャレンジ（ペアのテーマ） =====
   // 今日のチャレンジと、このペアの達成数は、Worker が決めて数える（/pair/counts の返事に入っている）。ここでは、読めた分を覚えて映すだけ。
   var pairInfo=null; // {pid:組の印, day:日付, theme:今日のチャレンジ, ach:達成数, today:今日は達成したか}
+  // 達成数（この端末の累計）。モードを変えても残るので、「みんなで」のテーマ画面や、相手を探している間にも右下に映す（1回以上あるときだけ）
+  var achKnown=0,achAt=0;
+  function achFoot(){return achKnown>0?{l:"",r:"達成 "+achKnown+"回"}:undefined}
+  function crowdThemeRedraw(key){ // まだ「みんなで」側のテーマ画面を出していて、テーマが読めていれば、達成数つきで描き直す
+    if(themeOn&&screenMode==="theme"&&!(mode==="pair"&&pairState==="paired")&&themeKey(0)===key&&themeCache&&themeCache.key===key)renderTheme(themeCache.text,key,undefined,undefined,undefined,achFoot());
+  }
+  function refreshAch(key){ // 達成数を Worker から読み直す（20秒以内に読んでいれば省く）
+    var now=Date.now();if(now-achAt<20000)return;achAt=now;
+    pairCall("/pair/counts",{scope:"crowd"}).then(function(r){
+      if(r&&typeof r.ach==="number"){var n=r.ach|0;if(n!==achKnown){achKnown=n;crowdThemeRedraw(key)}}
+    }).catch(function(e){dbg("達成数の読み込み",e)});
+  }
   function pairInfoNow(){return(pairInfo&&pairInfo.pid===pairPid&&pairInfo.day===themeKey(0))?pairInfo:null}
   // 「だれかと」でペアが決まっているあいだは、古びたボタンで、今日のチャレンジと、このペアの達成数を映す（待機中は「みんなで」と同じ今日のテーマ）
   function pairScreen(){
@@ -1643,13 +1656,13 @@ body{
       });
       return;
     }
-    if(themeCache&&themeCache.key===key)renderTheme(themeCache.text,key);
+    if(themeCache&&themeCache.key===key)renderTheme(themeCache.text,key,undefined,undefined,undefined,achFoot());
     else{
       renderTheme(null,key);
       (function tryTheme(n){
         resolveTheme(key).then(function(r){
           if(r.cache)setThemeCache(key,r.text);
-          if(themeOn&&screenMode==="theme"&&themeKey(0)===key)renderTheme(r.text,key,r.error);
+          if(themeOn&&screenMode==="theme"&&themeKey(0)===key)renderTheme(r.text,key,r.error,undefined,undefined,achFoot());
           // 読み込めなかったら、画面を出している間は3秒おきに最大3回やり直す
           if(r.error&&n<3)setTimeout(function(){
             if(themeOn&&screenMode==="theme"&&themeKey(0)===key&&!(themeCache&&themeCache.key===key))tryTheme(n+1);
@@ -1657,6 +1670,7 @@ body{
         });
       })(0);
     }
+    refreshAch(key);
     lightOn("theme");
   }
   function hideTheme(){themeOn=false;lightOff("theme")}
