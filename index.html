@@ -309,6 +309,10 @@ body{
 .sub .stext{flex:1;min-width:0;word-break:break-all;font-size:14px}
 .subnone{font-size:13px;opacity:.6;padding:4px 0}
 .stag{font-size:11px;opacity:.6;white-space:nowrap}
+.sbtn.seg{background:#b4b7b0;color:#26272b}.sbtn.seg.on{background:#26272b;color:#fff}
+.rule{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:0 0 8px;font-size:13px}
+.rule select{font:16px system-ui,sans-serif;padding:6px 8px;border:1px solid #b4b7b0;border-radius:8px;background:#fff;color:#26272b}
+.settings .rule input{flex:none;width:64px}
 .sw[aria-checked="true"] .knob{transform:translateX(20px)}
 /* モード切り替えボタン：灰色の丸いボタン。ランプ＝消灯:みんなで / 橙の点滅:相手を探し中 / 緑:相手が決まっている */
 .md{all:unset;position:absolute;left:calc(50% - var(--s)/2);top:calc(var(--s)*.31);cursor:pointer;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
@@ -374,6 +378,7 @@ body{
     <div class="srow"><span class="slabel">使い方</span><button class="sbtn" id="tourBtn" type="button">見る</button></div>
     <div class="ssec">
       <h3>テーマ応募</h3>
+      <div class="srow2" style="margin-bottom:6px"><button class="sbtn seg on" id="kindCrowd" type="button">みんなで</button><button class="sbtn seg" id="kindPair" type="button">だれかと</button></div>
       <div class="srow2"><input id="themeIn" type="text" maxlength="30" placeholder="テーマ（30文字まで）" autocomplete="off"><button class="sbtn" id="themeSend" type="button">応募</button></div>
     </div>
     <div class="ssec" id="adminGate" hidden>
@@ -382,8 +387,11 @@ body{
     </div>
     <div class="ssec" id="adminBox" hidden>
       <h3>応募の審査</h3>
+      <div class="subnone">みんなで</div>
       <div id="subList"></div>
-      <div class="srow2" style="margin-top:8px"><button class="sbtn" id="themeListBtn" type="button">テーマ一覧を見る</button></div>
+      <div class="subnone" style="margin-top:8px">だれかと（チャレンジ）</div>
+      <div id="subListPair"></div>
+      <div class="srow2" style="margin-top:8px"><button class="sbtn" id="themeListBtn" type="button">みんなでの一覧</button><button class="sbtn" id="pairListBtn" type="button">だれかとの一覧</button></div>
       <div id="themeAdmin" hidden></div>
       <div class="srow2" style="margin-top:8px"><button class="sbtn" id="adminOut" type="button">管理者をやめる</button></div>
     </div>
@@ -890,14 +898,18 @@ body{
   }
   // 記録（/pair/notify・/pair/crowd）には、Firebase のログイン証明を必ず添える。Worker が証明を確かめて、本人ごとに1日の回数を数える。
   // 管理者のときは wantAdmin も付ける。Worker が管理者かどうかを確かめて、回数や間隔の制限を外す。
+  // ペアの押した記録（/pair/notify）と、ペアの記録の読み込み（/pair/counts のペア分）には、App Check のトークンも添える。
+  // Worker が、ログイン証明と一緒にそれを Firebase に渡して、ペア用テーマ（pairThemes）と達成の条件を読むため。
   function pairCallAdmin(path,extra){
-    var needTok=(path==="/pair/notify"||path==="/pair/crowd");
+    var pc=(path==="/pair/counts"&&extra&&extra.scope==="pair");
+    var needTok=(path==="/pair/notify"||path==="/pair/crowd"||pc);
+    var wantAC=(path==="/pair/notify"||pc);
     if(!auth||(!needTok&&!(isAdmin&&auth.currentUser)))return pairCall(path,extra);
     return (auth.currentUser?Promise.resolve(auth.currentUser):ensureAuth()).then(function(u){return u.getIdToken()}).then(function(t){return t},function(){return null}).then(function(t){
       var x={};if(extra)for(var k in extra)x[k]=extra[k];
       if(t){x.idToken=t;if(isAdmin)x.wantAdmin=true}
-      if(!(t&&isAdmin))return pairCall(path,x);
-      // 管理者のときは、Worker が Realtime Database を読むために、App Check のトークンも渡す
+      if(!(t&&(isAdmin||wantAC)))return pairCall(path,x);
+      // 管理者・ペアのチャレンジのときは、Worker が Realtime Database を読むために、App Check のトークンも渡す
       var ac=null;try{ac=firebase.appCheck().getToken()}catch(e){}
       return Promise.resolve(ac).then(function(r){return r&&r.token},function(){return null}).then(function(at){
         if(at)x.appCheckToken=at;
@@ -1083,6 +1095,14 @@ body{
   var gateEl=document.getElementById("adminGate"),adminPass=document.getElementById("adminPass"),adminGo=document.getElementById("adminGo");
   var adminBox=document.getElementById("adminBox"),subList=document.getElementById("subList"),adminOut=document.getElementById("adminOut"),themeListBtn=document.getElementById("themeListBtn"),themeAdmin=document.getElementById("themeAdmin");
   var isAdmin=false,subQ=null,SUBMIT_KEY="button_theme_submit_at";
+  // 応募先：みんなで＝themeSubmissions、だれかと＝pairThemeSubmissions（分けて受け付ける）
+  var subKind="crowd",kindCrowd=document.getElementById("kindCrowd"),kindPair=document.getElementById("kindPair");
+  function setSubKind(k){
+    subKind=k;kindCrowd.classList.toggle("on",k==="crowd");kindPair.classList.toggle("on",k==="pair");
+    themeIn.placeholder=(k==="pair")?"チャレンジ（30文字まで）":"テーマ（30文字まで）";
+  }
+  kindCrowd.addEventListener("click",function(){setSubKind("crowd")});
+  kindPair.addEventListener("click",function(){setSubKind("pair")});
 
   function sendTheme(){
     var t=themeIn.value.trim();
@@ -1093,7 +1113,7 @@ body{
     if(Date.now()-last<60000){say("少し待ってからもう一度応募してください");return}
     themeSend.disabled=true;
     ensureAuth().then(function(u){
-      return db.ref("themeSubmissions/"+u.uid+"_"+Date.now()).set({uid:u.uid,text:t,status:"pending",at:TS});
+      return db.ref((subKind==="pair"?"pairThemeSubmissions/":"themeSubmissions/")+u.uid+"_"+Date.now()).set({uid:u.uid,text:t,status:"pending",at:TS});
     }).then(function(){
       try{localStorage.setItem(SUBMIT_KEY,String(Date.now()))}catch(e){}
       themeIn.value="";say("応募しました。管理人が確認します");
@@ -1132,7 +1152,7 @@ body{
   }
   function setAdmin(v){
     isAdmin=v;adminBox.hidden=!v;
-    if(!v){themeAdmin.hidden=true;themeAdmin.textContent="";themeListBtn.textContent="テーマ一覧を見る"}
+    if(!v){themeAdmin.hidden=true;themeAdmin.textContent="";adminKind=""}
     if(v){gateEl.hidden=true;watchSubs()}else unwatchSubs();
   }
   function checkAdmin(){
@@ -1168,35 +1188,87 @@ body{
       .then(function(){setAdmin(false);say("管理者をやめました")}).catch(function(e){dbg("管理者をやめる",e);say("操作に失敗しました")});
   });
 
-  // --- 審査：未処理の応募を一覧にして、採用（themes に追加）か不採用を選ぶ ---
+  // --- 審査：未処理の応募を一覧にして、採用か不採用を選ぶ ---
+  //  みんなで：themeSubmissions → 採用すると themes に追加。
+  //  だれかと：pairThemeSubmissions → 採用すると pairThemes に追加（達成の条件 rule も選ぶ。Worker がその条件で判定する）。
+  var subQP=null,subListPair=document.getElementById("subListPair");
+  function noteList(el,t){el.textContent="";var n=document.createElement("div");n.className="subnone";n.textContent=t;el.appendChild(n)}
   function watchSubs(){
     if(subQ||!db)return;
     subQ=db.ref("themeSubmissions").orderByChild("status").equalTo("pending");
-    subQ.on("value",renderSubs,function(e){ // 権限なし（パスコードが変わった等）
+    subQ.on("value",function(sn){renderSubs(sn,subList,"crowd")},function(e){ // 権限なし（パスコードが変わった等）
       dbg("応募の読み込み",e);subQ=null;isAdmin=false;adminBox.hidden=true;say("管理者の権限がありません");
     });
+    subQP=db.ref("pairThemeSubmissions").orderByChild("status").equalTo("pending");
+    subQP.on("value",function(sn){renderSubs(sn,subListPair,"pair")},function(e){ // ペア用のルールがまだ無い場合など。管理者のままにする
+      dbg("ペアの応募の読み込み",e);subQP=null;noteList(subListPair,"読み込めませんでした（Firebase のルールを確認）");
+    });
   }
-  function unwatchSubs(){if(subQ){try{subQ.off()}catch(e){}subQ=null}}
-  function renderSubs(sn){
+  function unwatchSubs(){
+    if(subQ){try{subQ.off()}catch(e){}subQ=null}
+    if(subQP){try{subQP.off()}catch(e){}subQP=null}
+  }
+  // 達成の条件の入力欄。get() は {type, ...} か、入力がおかしければ null（Worker の compileRule と同じ決まり）
+  function ruleEditor(){
+    var el=document.createElement("div");el.className="rule";
+    var sel=document.createElement("select");
+    [["within","◯分以内の差で2人とも押す"],["apart","◯分以上あけて2人とも押す"],["range","◯時〜◯時に2人とも押す"]].forEach(function(o){
+      var op=document.createElement("option");op.value=o[0];op.textContent=o[1];sel.appendChild(op);
+    });
+    function num(){var i=document.createElement("input");i.type="number";i.inputMode="numeric";return i}
+    function sp(){return document.createElement("span")}
+    var a=num(),u1=sp(),b=num(),u2=sp();
+    function upd(){
+      var t=sel.value;
+      if(t==="range"){a.min=0;a.max=24;a.value=5;u1.textContent="時〜";b.min=0;b.max=24;b.value=9;b.hidden=false;u2.hidden=false;u2.textContent="時"}
+      else{a.min=5;a.max=1440;a.value=(t==="within")?60:360;u1.textContent="分";b.hidden=true;u2.hidden=true}
+    }
+    sel.addEventListener("change",upd);upd();
+    el.appendChild(sel);el.appendChild(a);el.appendChild(u1);el.appendChild(b);el.appendChild(u2);
+    function get(){
+      var t=sel.value,x=parseInt(a.value,10),y=parseInt(b.value,10);
+      if(t==="range")return(x>=0&&y<=24&&x<y)?{type:"range",from:x,to:y}:null;
+      if(t==="within")return(x>=5&&x<=1440)?{type:"within",min:x}:null;
+      return(x>=10&&x<=1440)?{type:"apart",min:x}:null;
+    }
+    return{el:el,get:get};
+  }
+  function ruleLabel(r){
+    if(!r)return"条件なし";
+    if(r.type==="within")return r.min+"分以内";
+    if(r.type==="apart")return r.min+"分以上あける";
+    if(r.type==="range")return r.from+"〜"+r.to+"時";
+    return"条件不明";
+  }
+  function renderSubs(sn,listEl,kind){
     var items=[];sn.forEach(function(c){var v=c.val();if(v&&typeof v.text==="string")items.push({id:c.key,text:v.text,at:+v.at||0})});
     items.sort(function(a,b){return a.at-b.at});
-    subList.textContent="";
-    if(!items.length){var n=document.createElement("div");n.className="subnone";n.textContent="審査待ちの応募はありません";subList.appendChild(n);return}
+    if(!items.length){noteList(listEl,"審査待ちの応募はありません");return}
+    listEl.textContent="";
     items.forEach(function(it){
+      var box=document.createElement("div");
       var row=document.createElement("div");row.className="sub";
       var tx=document.createElement("span");tx.className="stext";tx.textContent=it.text;
       var ok=document.createElement("button");ok.type="button";ok.className="sbtn ok";ok.textContent="採用";
       var no=document.createElement("button");no.type="button";no.className="sbtn no";no.textContent="不採用";
-      ok.addEventListener("click",function(){decide(it,true,[ok,no])});
-      no.addEventListener("click",function(){decide(it,false,[ok,no])});
-      row.appendChild(tx);row.appendChild(ok);row.appendChild(no);subList.appendChild(row);
+      var ed=(kind==="pair")?ruleEditor():null;
+      ok.addEventListener("click",function(){decide(it,true,[ok,no],kind,ed)});
+      no.addEventListener("click",function(){decide(it,false,[ok,no],kind,ed)});
+      row.appendChild(tx);row.appendChild(ok);row.appendChild(no);box.appendChild(row);
+      if(ed)box.appendChild(ed.el);
+      listEl.appendChild(box);
     });
   }
-  function decide(it,adopt,btns){
+  function decide(it,adopt,btns,kind,ed){
+    var rule=null;
+    if(adopt&&kind==="pair"){rule=ed&&ed.get();if(!rule){say("達成の条件を正しく入れてください");return}}
     btns.forEach(function(b){b.disabled=true});
-    var up={};up["themeSubmissions/"+it.id+"/status"]=adopt?"approved":"rejected";
-    if(adopt)up["themes/"+db.ref("themes").push().key]=it.text;
-    db.ref().update(up).then(function(){say(adopt?"採用しました（テーマ一覧に追加）":"不採用にしました")})
+    var up={};up[(kind==="pair"?"pairThemeSubmissions/":"themeSubmissions/")+it.id+"/status"]=adopt?"approved":"rejected";
+    if(adopt){
+      if(kind==="pair")up["pairThemes/"+db.ref("pairThemes").push().key]={text:it.text,rule:rule,addedAt:TS};
+      else up["themes/"+db.ref("themes").push().key]=it.text;
+    }
+    db.ref().update(up).then(function(){say(adopt?(kind==="pair"?"採用しました（ペアのテーマに追加）":"採用しました（テーマ一覧に追加）"):"不採用にしました")})
       .catch(function(e){dbg("審査",e);btns.forEach(function(b){b.disabled=false});say("操作に失敗しました")});
   }
   // --- テーマ一覧：管理者が「テーマ一覧を見る」ボタンで開き、テーマを取り除く（取り除くボタンは2回押して実行） ---
@@ -1206,20 +1278,25 @@ body{
     if(armedTimer){clearTimeout(armedTimer);armedTimer=0}
     if(armedBtn){armedBtn.textContent="取り除く";armedBtn.classList.remove("no");armedBtn=null}
   }
-  function renderThemeAdmin(){
+  var adminKind=""; // いま開いているテーマ一覧（"crowd"＝themes / "pair"＝pairThemes。閉じていれば ""）
+  var pairListBtn=document.getElementById("pairListBtn");
+  function renderThemeAdmin(kind){
     disarm();themeAdmin.textContent="";
+    var pth=(kind==="pair")?"pairThemes":"themes";
     var load=document.createElement("div");load.className="subnone";load.textContent="読み込み中…";themeAdmin.appendChild(load);
-    fetchThemeList().then(function(r){
+    fetchThemeList(pth).then(function(r){
+      if(adminKind!==kind)return; // 読んでいる間に閉じた・別の一覧に切り替えた
       themeAdmin.textContent="";
       if(!r.ok){var er=document.createElement("div");er.className="subnone";er.textContent="読み込めませんでした";themeAdmin.appendChild(er);return}
       var start=dayOfKey(themeKey(0))*86400000-9*3600000,items=[];
       r.list.forEach(function(t){if(!(t.rm&&t.rm<start))items.push(t)}); // 昨日までに取り除いたものは出さない
       items.sort(function(a,b){return(a.at-b.at)||(a.k<b.k?-1:a.k>b.k?1:0)});
-      var h=document.createElement("div");h.className="subnone";h.textContent="テーマ一覧（"+items.length+"件）";themeAdmin.appendChild(h);
+      var h=document.createElement("div");h.className="subnone";h.textContent=(kind==="pair"?"だれかとのテーマ一覧（":"みんなでのテーマ一覧（")+items.length+"件）";themeAdmin.appendChild(h);
       items.forEach(function(t){
         var row=document.createElement("div");row.className="sub";
         var tx=document.createElement("span");tx.className="stext";tx.textContent=t.text;row.appendChild(tx);
         var tag=t.rm?"明日から外れる":(t.at>=start?"明日から":"");
+        if(kind==="pair")tag=ruleLabel(t.rule)+(tag?"・"+tag:"");
         if(tag){var tg=document.createElement("span");tg.className="stag";tg.textContent=tag;row.appendChild(tg)}
         if(!t.rm){
           var rmv=document.createElement("button");rmv.type="button";rmv.className="sbtn";rmv.textContent="取り除く";
@@ -1229,8 +1306,8 @@ body{
               armedTimer=setTimeout(disarm,4000);return;
             }
             disarm();rmv.disabled=true; // 2回目：取り除く
-            var o={text:t.text,removedAt:TS};if(t.aa>0)o.addedAt=t.aa;
-            db.ref("themes/"+t.k).set(o).then(function(){say("取り除きました（明日から使われません）");renderThemeAdmin()})
+            var o={text:t.text,removedAt:TS};if(t.aa>0)o.addedAt=t.aa;if(kind==="pair"&&t.rule)o.rule=t.rule;
+            db.ref(pth+"/"+t.k).set(o).then(function(){say("取り除きました（明日から使われません）");renderThemeAdmin(kind)})
               .catch(function(e){dbg("テーマを取り除く",e);rmv.disabled=false;say("操作に失敗しました")});
           });
           row.appendChild(rmv);
@@ -1239,10 +1316,12 @@ body{
       });
     });
   }
-  themeListBtn.addEventListener("click",function(){
-    if(!themeAdmin.hidden){disarm();themeAdmin.hidden=true;themeAdmin.textContent="";themeListBtn.textContent="テーマ一覧を見る";return}
-    themeAdmin.hidden=false;themeListBtn.textContent="テーマ一覧を閉じる";renderThemeAdmin();
-  });
+  function toggleThemeList(kind){
+    if(adminKind===kind){disarm();themeAdmin.hidden=true;themeAdmin.textContent="";adminKind="";return}
+    adminKind=kind;themeAdmin.hidden=false;renderThemeAdmin(kind);
+  }
+  themeListBtn.addEventListener("click",function(){toggleThemeList("crowd")});
+  pairListBtn.addEventListener("click",function(){toggleThemeList("pair")});
   setBell(false);
   checkAdmin(); // 管理者なら、起動時から回数制限なしにする
   if(mode==="pair"){ // 通知が使えなくても「だれかと」のまま入り直す（通知なし）
@@ -1308,14 +1387,14 @@ body{
   // 今日の分（5分ごとの押された回数）を Worker から読む。1日あたり最大288件の小さな数字なので軽い。
   function loadPresses(){
     var dk=themeKey(0),src=graphSrc(),paired=(mode==="pair"&&pairState==="paired");
-    return pairCall("/pair/counts",{scope:paired?"pair":"crowd"}).then(function(r){
+    return (paired?pairCallAdmin:pairCall)("/pair/counts",{scope:paired?"pair":"crowd"}).then(function(r){
       var c={},bb=(r&&r.b)||{};
       Object.keys(bb).forEach(function(k){var v=bb[k],i=parseInt(k,10);if(typeof v==="number"&&v>0&&i>=0&&i<288)c[i]=v});
       if(countsDay!==dk||countsSrc!==src){unacked={};unackedBase={}}
       counts=c;countsDay=dk;countsSrc=src;
-      if(paired&&r&&typeof r.theme==="string"&&r.pid){ // 「だれかと」のチャレンジ：今日のテーマと達成数
+      if(paired&&r&&r.pid){ // 「だれかと」のチャレンジ：今日のテーマ（無ければ null）と達成数
         var prev=pairInfoNow();
-        pairInfo={pid:r.pid,day:dk,theme:r.theme,ach:r.ach|0,today:!!r.achToday};
+        pairInfo={pid:r.pid,day:dk,theme:(typeof r.theme==="string"&&r.theme)?r.theme:null,ach:r.ach|0,today:!!r.achToday};
         if(prev&&prev.pid===r.pid&&!prev.today&&r.achToday)say("今日のチャレンジを達成しました");
       }
       return true;
@@ -1460,22 +1539,23 @@ body{
     for(i=0;i<8;i++){p=PUSH_CH.indexOf(k.charAt(i));if(p<0)return 0;t=t*64+p}
     return(t>1.4e12&&t<4e12)?t:0; // 2014〜2096年ごろに収まらないものは、時刻ではないキーとして扱う
   }
-  function fetchThemeList(){
+  function fetchThemeList(path){ // path：省略すると themes（みんなで）。pairThemes（だれかと）も同じ形で読める（rule は達成の条件）
     var def={list:[],ok:false};
     if(!db)return Promise.resolve(def);
-    return ensureAuth().then(function(){return db.ref("themes").once("value")}).then(function(sn){
+    return ensureAuth().then(function(){return db.ref(path||"themes").once("value")}).then(function(sn){
       var list=[];
       sn.forEach(function(c){
-        var v=c.val(),text=null,at=0,aa=0,rm=0;
+        var v=c.val(),text=null,at=0,aa=0,rm=0,rule=null;
         if(typeof v==="string")text=v;
         else if(v&&typeof v==="object"){
           if(typeof v.text==="string")text=v.text;
           if(typeof v.addedAt==="number")at=aa=v.addedAt;
           if(typeof v.removedAt==="number")rm=v.removedAt;
+          if(v.rule&&typeof v.rule==="object")rule=v.rule;
         }
         if(text===null||!text.trim())return;
         if(!at)at=keyTime(c.key);
-        list.push({k:c.key,text:text.trim(),at:at,aa:aa,rm:rm});
+        list.push({k:c.key,text:text.trim(),at:at,aa:aa,rm:rm,rule:rule});
       });
       return{list:list,ok:true};
     }).catch(function(e){dbg("テーマの読み込み",e);return def});
@@ -1551,7 +1631,8 @@ body{
   // 「だれかと」でペアが決まっているあいだは、古びたボタンで、今日のチャレンジと、このペアの達成数を映す（待機中は「みんなで」と同じ今日のテーマ）
   function pairScreen(){
     var pi=pairInfoNow();
-    renderTheme(pi?pi.theme:null,themeKey(0),false,"PAIR THEME",undefined,pi?{l:pi.today?"今日：達成！":"今日：まだ",r:"達成 "+pi.ach+"回"}:undefined);
+    if(!pi){renderTheme(null,themeKey(0));return}
+    renderTheme(pi.theme||"今日のチャレンジはありません",themeKey(0),false,"PAIR THEME",undefined,{l:pi.theme?(pi.today?"今日：達成！":"今日：まだ"):"",r:"達成 "+pi.ach+"回"});
   }
   function showTheme(){
     themeOn=true;var key=themeKey(0);
